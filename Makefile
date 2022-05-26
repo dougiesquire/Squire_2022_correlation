@@ -38,6 +38,7 @@ endif
 else
  	@echo ">>> This project uses conda to install the environment. Please install conda"
 endif
+	$(CONDA_ACTIVATE) $(ENV_NAME) ; python -m ipykernel install --user --name $(ENV_NAME) --display-name "Python ($(ENV_NAME))"
 
 ## Delete unneeded Python files, dask-worker files and PBS output files
 clean:
