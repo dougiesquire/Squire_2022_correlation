@@ -14,7 +14,7 @@ HAS_CONDA=False
 else
 HAS_CONDA=True
 CONDA_ACTIVATE=source $$(conda info --base)/etc/profile.d/conda.sh ; conda activate ; conda activate
-ifeq (,($(CONDA_ACTIVATE) $(ENV_NAME)))
+ifeq (,$(shell $(CONDA_ACTIVATE) $(ENV_NAME) 2>&1))
 HAS_ENV=True
 else
 HAS_ENV=False 
@@ -27,7 +27,6 @@ endif
 
 ## Create the python environment or update it if it exists
 environment:
-	echo $(HAS_ENV)
 ifeq (True,$(HAS_CONDA))
 	@echo ">>> Detected conda, creating conda environment."
 ifeq (True,$(HAS_ENV)) # check if the directory is there
