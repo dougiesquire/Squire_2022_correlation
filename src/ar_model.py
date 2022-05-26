@@ -6,6 +6,12 @@ from numpy.lib.stride_tricks import sliding_window_view
 
 import xarray as xr
 
+from itertools import cycle
+
+import matplotlib.pyplot as plt
+
+from src import utils
+
 
 def yule_walker(ds, order, dim="time", kwargs={}):
     """
@@ -237,3 +243,148 @@ def predict(params, inits, n_steps, n_members=1, scale=None):
             "lead": range(1, n_steps + 1),
         },
     ).squeeze(drop=True)
+
+
+def generate_samples_like(
+    ts,
+    order,
+    n_times,
+    n_samples,
+    n_members=None,
+    rolling_means=None,
+    plot_diagnostics=True,
+):
+    """
+    Convenience function for generating samples from a AR process fitted to the provided timeseries.
+
+
+    Parameters
+    ----------
+    ts : xarray object
+        The timeseries to fit the AR model to
+    order : int or str
+        The order of the AR(n) process to fit. Alternatively, users can pass the string
+        "select_order" in order to use statsmodels.tsa.ar_model.ar_select_order to
+        determine the order.
+    n_times : int
+        The number of timesteps per sample
+    n_samples : int
+        The number of samples to generate
+    n_members : int, optional
+        The number of ensemble members to generate. N ensemble members are generated from N
+        predictions initialised from samples of the provided process. When provided with
+        rolling_mean, rolling means of length L are computed by averaging prediction times
+        1->L.
+    rolling_means : list, optional
+        A list of lengths of rolling means to compute
+    plot_diagnostics : boolean, optional
+        If True, plot some diagnostic plots
+    """
+
+    p = fit(ts, order=order)
+    order = p.order.values
+    params = p.isel(params=slice(0, -1)).values
+    scale = p.isel(params=-1).values
+
+    samples = generate_samples(
+        params,
+        scale,
+        n_times=n_times,
+        n_samples=n_samples,
+        n_members=n_members,
+        rolling_means=rolling_means,
+    )
+
+    if plot_diagnostics:
+        fig = plt.figure(figsize=(14, 14))
+
+        # Example timeseries
+        ax = fig.add_subplot(3, 1, 1)
+        samples = 4
+        expl = generate_samples(
+            params,
+            scale,
+            n_times=len(ts),
+            n_samples=samples,
+        )
+        expl.plot.line(ax=ax, x="time", label=f"AR({order}) model")
+        ax.plot(ts, label="piControl", color="k")
+        ax.grid()
+        ax.set_xlabel("Time")
+        ax.set_title("Example timeseries")
+        h, l = ax.get_legend_handles_labels()
+        ax.legend(handles=[h[0], h[-1]], labels=[l[0], l[-1]])
+
+        # Partial ACFs
+        ax = fig.add_subplot(3, 2, 3)
+        utils.acf(expl, partial=True).plot.line(
+            ax=ax, x="lag", label=f"AR({order}) model", add_legend=False
+        )
+        utils.acf(ts, partial=True).plot(ax=ax, label="piControl", color="k")
+        ax.grid()
+        ax.set_xlabel("Lag")
+        ax.set_title("pACF")
+        h, l = ax.get_legend_handles_labels()
+        ax.legend(handles=[h[0], h[-1]], labels=[l[0], l[-1]])
+
+        # PDFs
+        ax = fig.add_subplot(3, 2, 4)
+        h, bin_edges = np.histogram(ts, bins=30, density=True)
+        for s in expl.sample:
+            ax.hist(
+                expl.sel(sample=s),
+                30,
+                alpha=0.6,
+                density=True,
+                label=f"AR({order}) model",
+            )
+        ax.plot((bin_edges[:-1] + bin_edges[1:]) / 2, h, label="piControl", color="k")
+        ax.grid()
+        ax.set_title("pdf")
+        h, l = ax.get_legend_handles_labels()
+        ax.legend(handles=[h[0], h[-1]], labels=[l[0], l[-1]])
+
+        # Example forecasts
+        ax = fig.add_subplot(3, 1, 3)
+        n_leads = 8
+        n_members = 100
+        expl = predict(
+            params,
+            ts,
+            n_leads,
+            n_members=n_members,
+            scale=scale,
+        )
+        inits = expl.init[::n_leads]
+        colors = [f"C{i}" for i in range(0, 10)]
+        colorcycler = cycle(colors)
+        label = True
+        for init in inits.values:
+            color = next(colorcycler)
+
+            if label:
+                l = f"AR({order}) forecast"
+            else:
+                l = "__nolabel__"
+
+            q1 = expl.sel(init=init).quantile(0.05, dim="member")
+            q2 = expl.sel(init=init).quantile(0.95, dim="member")
+            ax.fill_between(
+                range(init + 1, init + n_leads + 1),
+                q1,
+                q2,
+                color=color,
+                alpha=0.4,
+                label=l,
+            )
+
+            label = False
+
+        ax.plot(ts, label="piControl", color="k")
+        ax.set_xlim(len(ts) - 200, len(ts))
+        ax.set_xlabel("Time")
+        ax.set_title("Example forecasts")
+        ax.legend()
+        ax.grid()
+
+    return samples
