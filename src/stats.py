@@ -1,0 +1,540 @@
+"Functions loosely in the realm of statistics"
+
+import sys
+
+import math
+
+import numpy as np
+
+import xarray as xr
+
+import xskillscore as xs
+
+import statsmodels.api as sm
+
+from collections import OrderedDict
+from itertools import chain, islice, cycle
+
+
+def acf(ds, dim="time", partial=False, nlags=10, kwargs={}):
+    """
+    Vectorized xarray wrapper on statsmodels.tsa.acf and .pacf
+
+    Parameters
+    ----------
+    ds : xarray object
+        The data to use to compute the ACF
+    dim : str
+        The dimension along which to compute the ACF
+    partial: bool, optional
+        If True, return the partial ACF
+    nlags: int, optional
+        The number of lags to compute
+    kwargs: dict, optional
+        Additional kwargs to pass to the statsmodel acf function
+    """
+
+    def _acf(data, nlags, partial):
+        if partial:
+            return sm.tsa.pacf(data, nlags=nlags, method="ywm")
+        else:
+            return sm.tsa.acf(data, nlags=nlags)
+
+    return xr.apply_ufunc(
+        _acf,
+        ds,
+        kwargs=dict(nlags=nlags, partial=partial),
+        input_core_dims=[[dim]],
+        output_core_dims=[["lag"]],
+        vectorize=True,
+        dask="parallelized",
+        output_dtypes=[float],
+        dask_gufunc_kwargs=dict(output_sizes={"lag": nlags + 1}),
+    ).assign_coords({"lag": range(nlags + 1)})
+
+
+def student_t(N, r):
+    """
+    Return the Student-t distribution for null correlation
+
+    Parameters
+    ----------
+    N : int
+        The number of correlation samples
+    r : numpy array
+        The correlation values at which to return the pdf(r)
+    """
+    from scipy.stats import beta
+
+    a = N / 2 - 1
+    b = N / 2 - 1
+    return beta(a, b, loc=-1, scale=2).pdf(r)
+
+
+# Metrics
+# ===============================================
+
+
+def infer_metric(a, b, metric, method, method_kwargs=None, dim="time"):
+    """
+    Return skill metric(s) between two series and corresponding p-value(s)
+
+    Parameters
+    ----------
+    a : xarray object
+        Input array
+    b : xarray object
+        Input array
+    metric : str
+        The metric to infer. Must be the name of a method in src.stats
+    method : str
+        The method to use to determine the p-value(s). Options are "bootstrap"
+    method_kwargs : dict
+        kwargs to pass to method
+    dim : str
+        The dimension along which to compute the metric
+    """
+
+    if method == "bootstrap":
+        samp, p = bootstrap_pvalue(a, b, metric, dim, **method_kwargs)
+
+    return samp, p
+
+
+def pearson_r(a, b, dim="time"):
+    """
+    Return the Pearson correlation coefficient between two timeseries
+
+    Parameters
+    ----------
+    a : xarray object
+        Input array
+    b : xarray Dataset
+        Input object
+    """
+
+    return xs.pearson_r(a.mean("member"), b, dim)
+
+
+def Fisher_z(ds):
+    """
+    Return the Fisher-z transformation of ds
+
+    Parameters
+    ----------
+    ds : xarray Dataset
+        The data to apply the Fisher-z transformation to
+    """
+    return np.arctanh(ds)
+
+
+# Bootstrapping
+# ===============================================
+
+
+def bootstrap_pvalue(
+    a,
+    b,
+    metric,
+    metric_dim,
+    blocks,
+    n_permutations,
+    transform,
+):
+    """
+    Determine the two-tail p-value(s) for a given metric by block-
+    bootstrapping as in Goddard et al. (2013)
+
+    Parameters
+    ----------
+    a : xarray object
+        Input array
+    b : xarray object
+        Input array
+    metric : function
+        The metric to infer.
+    metric_dim : str
+        The dimension along which to compute the metric
+    blocks : dict
+        Dictionary of the dimension(s) to bootstrap and the block sizes to use
+        along each dimension: {dim: blocksize}.
+    n_permutations : int
+        The number of times to repeat the bootstrapping
+    transform : str
+        Transform to apply prior to estimating significant points. Must be the
+        name of a method in src.stats
+    """
+
+    metric = getattr(sys.modules[__name__], metric)
+    transform = getattr(sys.modules[__name__], transform)
+
+    samp = metric(a, b, metric_dim)
+    permutations = metric(
+        *block_bootstrap(
+            a,
+            b,
+            blocks=blocks,
+            n_permutations=n_permutations,
+        ),
+        metric_dim,
+    )
+
+    null = 0
+    if transform:
+        null = transform(null)
+        permutations = transform(permutations)
+
+    left_tail_p = xr.where(permutations < null, 1, 0).mean("permutation") * 2
+    right_tail_p = xr.where(permutations > null, 1, 0).mean("permutation") * 2
+    p = xr.where(samp >= 0, left_tail_p, right_tail_p)
+
+    return samp, p
+
+
+def _get_blocked_random_indices(shape, block_axis, block_size):
+    """
+    Return indices to randomly sample an axis of an array in consecutive
+    (cyclic) blocks
+    """
+
+    def _random_blocks(length, block):
+        """
+        Indices to randomly sample blocks in a cyclic manner along an axis of a
+        specified length
+        """
+        if block == length:
+            return list(range(length))
+        else:
+            repeats = math.ceil(length / block)
+            return list(
+                chain.from_iterable(
+                    islice(cycle(range(length)), s, s + block)
+                    for s in np.random.randint(0, length, repeats)
+                )
+            )[:length]
+
+    if block_size == 1:
+        return np.random.randint(
+            0,
+            shape[block_axis],
+            shape,
+        )
+    else:
+        non_block_shapes = [s for i, s in enumerate(shape) if i != block_axis]
+        return np.moveaxis(
+            np.stack(
+                [
+                    _random_blocks(shape[block_axis], block_size)
+                    for _ in range(np.prod(non_block_shapes))
+                ],
+                axis=-1,
+            ).reshape([shape[block_axis]] + non_block_shapes),
+            0,
+            block_axis,
+        )
+
+
+def _n_nested_blocked_random_indices(sizes, n_permutations):
+    """
+    Returns indices to randomly resample blocks of an array (with replacement)
+    in a nested manner many times. Here, "nested" resampling means to randomly
+    resample the first dimension, then for each randomly sampled element along
+    that dimension, randomly resample the second dimension, then for each
+    randomly sampled element along that dimension, randomly resample the third
+    dimension etc.
+
+    Parameters
+    ----------
+    sizes : OrderedDict
+        Dictionary with {names: (sizes, blocks)} of the dimensions to resample
+    n_permutations : int
+        The number of times to repeat the random resampling
+    """
+
+    shape = [s[0] for s in sizes.values()]
+    indices = OrderedDict()
+    for ax, (key, (_, block)) in enumerate(sizes.items()):
+        indices[key] = _get_blocked_random_indices(
+            shape[: ax + 1] + [n_permutations], ax, block
+        )
+    return indices
+
+
+def _expand_n_nested_random_indices(indices):
+    """
+    Expand the dimensions of the nested input arrays so that they can be
+    broadcast and return a tuple that can be directly indexed
+
+    Parameters
+    ----------
+    indices : list of numpy arrays
+        List of numpy arrays of sequentially increasing dimension as output by
+        the function `_n_nested_blocked_random_indices`. The last axis on all
+        inputs is assumed to correspond to the permutation axis
+    """
+    broadcast_ndim = indices[-1].ndim
+    broadcast_indices = []
+    for i, ind in enumerate(indices):
+        expand_axes = list(range(i + 1, broadcast_ndim - 1))
+        broadcast_indices.append(np.expand_dims(ind, axis=expand_axes))
+    return (..., *tuple(broadcast_indices))
+
+
+def _block_bootstrap(*objects, blocks, n_permutations, exclude_dims=None):
+    """
+    Repeatedly bootstrap the provided arrays across the specified dimension(s)
+    and stack the new arrays along a new "permutation" dimension. The
+    boostrapping is done in a nested manner. I.e. bootstrap the first provided
+    dimension, then for each bootstrapped sample along that dimenion, bootstrap
+    the second provided dimension, then for each bootstrapped sample along that
+    dimenion...
+
+    Note, this function expands out the permutation dimension inside a
+    universal function. However, this can generate very large chunks (it
+    multiplies chunk size by the number of permutations) and it falls over for
+    large numbers of permutations for reasons I don't understand. It is thus
+    best to apply this function in blocks using `block_bootstrap`
+
+    Parameters
+    ----------
+    objects : xarray Dataset(s)
+        The data to bootstrap. Multiple datasets can be passed to be
+        bootstrapped in the same way. Where multiple datasets are passed, all
+        datasets need not contain all bootstrapped dimensions. However, because
+        of the bootstrapping is applied in a nested manner, the dimensions in
+        all input objects must also be nested. E.g., for `blocks.keys=['d1',
+        'd2','d3']` an object with dimensions 'd1' and 'd2' is valid but an
+        object with only dimension 'd2' is not.
+    blocks : dict
+        Dictionary of the dimension(s) to bootstrap and the block sizes to use
+        along each dimension: {dim: blocksize}.
+    n_permutations : int
+        The number of times to repeat the bootstrapping
+    exclude_dims : list of list
+        List of the same length as the number of objects giving a list of
+        dimensions specifed in `blocks` to exclude from each object. Default is
+        to assume that no dimensions are excluded.
+    """
+
+    def _bootstrap(*arrays, indices):
+        """Bootstrap the array(s) using the provided indices"""
+        bootstrapped = [array[ind] for array, ind in zip(arrays, indices)]
+        if len(bootstrapped) == 1:
+            return bootstrapped[0]
+        else:
+            return tuple(bootstrapped)
+
+    objects = list(objects)
+
+    # Rename exclude_dims so they are not bootstrapped
+    if exclude_dims is None:
+        exclude_dims = [[] for _ in range(len(objects))]
+    msg = (
+        "exclude_dims should be a list of the same length as the number of "
+        "objects containing lists of dimensions to exclude for each object"
+    )
+    assert isinstance(exclude_dims, list), msg
+    assert len(exclude_dims) == len(objects), msg
+    assert all(isinstance(x, list) for x in exclude_dims), msg
+    renames = []
+    for i, (obj, exclude) in enumerate(zip(objects, exclude_dims)):
+        objects[i] = obj.rename(
+            {d: f"dim{ii}" for ii, d in enumerate(exclude)},
+        )
+        renames.append({f"dim{ii}": d for ii, d in enumerate(exclude)})
+
+    dim = list(blocks.keys())
+    if isinstance(dim, str):
+        dim = [dim]
+
+    # Check that boostrapped dimensions are the same size on all objects
+    for d in blocks.keys():
+        dim_sizes = [o.sizes[d] for o in objects if d in o.dims]
+        assert all(
+            s == dim_sizes[0] for s in dim_sizes
+        ), f"Block dimension {d} is not the same size on all input objects"
+
+    # Get the sizes of the bootstrap dimensions
+    sizes = None
+    for obj in objects:
+        try:
+            sizes = OrderedDict(
+                {d: (obj.sizes[d], b) for d, b in blocks.items()},
+            )
+            break
+        except KeyError:
+            pass
+    if sizes is None:
+        raise ValueError(
+            "At least one input object must contain all dimensions in dim",
+        )
+
+    # Generate the random indices first so that we can be sure that each
+    # dask chunk uses the same indices. Note, I tried using random.seed()
+    # to achieve this but it was flaky. These are the indices to bootstrap
+    # all objects.
+    nested_indices = _n_nested_blocked_random_indices(sizes, n_permutations)
+
+    # Need to expand the indices for broadcasting for each object separately
+    # as each object may have different dimensions
+    indices = []
+    input_core_dims = []
+    for obj in objects:
+        available_dims = [d for d in dim if d in obj.dims]
+        indices_to_expand = [nested_indices[key] for key in available_dims]
+
+        # Check that dimensions are nested
+        ndims = [i.ndim for i in indices_to_expand]
+        # Start at 2 due to permutation dim
+        if ndims != list(range(2, len(ndims) + 2)):
+            raise ValueError("The dimensions of all inputs must be nested")
+
+        indices.append(_expand_n_nested_random_indices(indices_to_expand))
+        input_core_dims.append(available_dims)
+
+    # Loop over objects because they may have non-matching dimensions and
+    # we don't want to broadcast them as this will unnecessarily increase
+    # chunk size for dask arrays
+    result = []
+    for obj, ind, core_dims in zip(objects, indices, input_core_dims):
+        if isinstance(obj, xr.Dataset):
+            # Assume all variables have the same dtype
+            output_dtype = obj[list(obj.data_vars)[0]].dtype
+        else:
+            output_dtype = obj.dtype
+
+        result.append(
+            xr.apply_ufunc(
+                _bootstrap,
+                obj,
+                kwargs=dict(
+                    indices=[ind],
+                ),
+                input_core_dims=[core_dims],
+                output_core_dims=[core_dims + ["permutation"]],
+                dask="parallelized",
+                dask_gufunc_kwargs=dict(
+                    output_sizes={"permutation": n_permutations},
+                ),
+                output_dtypes=[output_dtype],
+            )
+        )
+
+    # Rename excluded dimensions
+    return tuple(res.rename(rename) for res, rename in zip(result, renames))
+
+
+def block_bootstrap(*objects, blocks, n_permutations, exclude_dims=None):
+    """
+    Repeatedly bootstrap the provided arrays across the specified
+    dimension(s) and stack the new arrays along a new "permutation"
+    dimension. The boostrapping is done in a nested manner. I.e. bootstrap
+    the first provided dimension, then for each bootstrapped sample along
+    that dimenion, bootstrap the second provided dimension, then for each
+    bootstrapped sample along that dimenion...
+
+    Parameters
+    ----------
+    objects : xarray Dataset(s)
+        The data to bootstrap. Multiple datasets can be passed to be
+        bootstrapped in the same way. Where multiple datasets are passed, all
+        datasets need not contain all bootstrapped dimensions. However, because
+        of the bootstrapping is applied in a nested manner, the dimensions in
+        all input objects must also be nested. E.g., for `blocks.keys=['d1',
+        'd2','d3']` an object with dimensions 'd1' and 'd2' is valid but an
+        object with only dimension 'd2' is not.
+    blocks : dict
+        Dictionary of the dimension(s) to bootstrap and the block sizes to use
+        along each dimension: {dim: blocksize}.
+    n_permutations : int
+        The number of times to repeat the bootstrapping
+    exclude_dims : list of list
+        List of the same length as the number of objects giving a list of
+        dimensions specifed in `blocks` to exclude from each object. Default
+        is to assume that no dimensions are excluded.
+    """
+    # The fastest way to perform the permutations is to expand out the
+    # permutation dimension inside the universal function (see
+    # _iterative_bootstrap). However, this can generate very large chunks (it
+    # multiplies chunk size by the number of permutations) and it falls over
+    # for large numbers of permutations for reasons I don't understand. Thus
+    # here we loop over blocks of permutations to generate the total number
+    # of permutations.
+
+    def _max_chunk_size_MB(ds):
+        """
+        Get the max chunk size in a dataset
+        """
+
+        def size_of_chunk(chunks, itemsize):
+            """
+            Returns size of chunk in MB given dictionary of chunk sizes
+            """
+            N = 1
+            for value in chunks:
+                if not isinstance(value, int):
+                    value = max(value)
+                N = N * value
+            return itemsize * N / 1024**2
+
+        chunks = []
+        for var in ds.data_vars:
+            da = ds[var]
+            chunk = da.chunks
+            itemsize = da.data.itemsize
+            if chunk is None:
+                # numpy array
+                chunks.append((da.data.size * itemsize) / 1024**2)
+            else:
+                chunks.append(size_of_chunk(chunk, itemsize))
+        return max(chunks)
+
+    # Choose permutation blocks to limit chunk size on dask arrays
+    if objects[
+        0
+    ].chunks:  # TO DO: this is not a very good check that input is dask array
+        MAX_CHUNK_SIZE_MB = 200
+        ds_max_chunk_size_MB = max(
+            [_max_chunk_size_MB(obj) for obj in objects],
+        )
+        blocksize = int(MAX_CHUNK_SIZE_MB / ds_max_chunk_size_MB)
+        if blocksize > n_permutations:
+            blocksize = n_permutations
+        if blocksize < 1:
+            blocksize = 1
+    else:
+        blocksize = n_permutations
+
+    bootstraps = []
+    for _ in range(blocksize, n_permutations + 1, blocksize):
+        bootstraps.append(
+            _block_bootstrap(
+                *objects,
+                blocks=blocks,
+                n_permutations=blocksize,
+                exclude_dims=exclude_dims,
+            )
+        )
+
+    leftover = n_permutations % blocksize
+    if leftover:
+        bootstraps.append(
+            _block_bootstrap(
+                *objects,
+                blocks=blocks,
+                n_permutations=leftover,
+                exclude_dims=exclude_dims,
+            )
+        )
+
+    return tuple(
+        [
+            xr.concat(
+                b,
+                dim="permutation",
+                coords="minimal",
+                compat="override",
+            )
+            for b in zip(*bootstraps)
+        ]
+    )

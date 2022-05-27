@@ -4,7 +4,6 @@ import numpy as np
 
 import xarray as xr
 
-import statsmodels.api as sm
 
 def detrend(ds, dim="time", ensemble_dim="member"):
     """
@@ -36,62 +35,9 @@ def detrend(ds, dim="time", ensemble_dim="member"):
     return ds - fit
 
 
-def acf(ds, dim="time", partial=False, nlags=10, kwargs={}):
-    """
-    Vectorized xarray wrapper on statsmodels.tsa.acf and .pacf
-    
-    Parameters
-    ----------
-    ds : xarray object
-        The data to use to compute the ACF
-    dim : str
-        The dimension along which to compute the ACF
-    partial: bool, optional
-        If True, return the partial ACF
-    nlags: int, optional
-        The number of lags to compute
-    kwargs: dict, optional
-        Additional kwargs to pass to the statsmodel acf function
-    """
-
-    def _acf(data, nlags, partial):
-        if partial:
-            return sm.tsa.pacf(data, nlags=nlags, method='ywm')
-        else:
-            return sm.tsa.acf(data, nlags=nlags)
-
-    return xr.apply_ufunc(
-        _acf,
-        ds,
-        kwargs=dict(nlags=nlags, partial=partial),
-        input_core_dims=[[dim]],
-        output_core_dims=[["lag"]],
-        vectorize=True,
-        dask="parallelized",
-        output_dtypes=[float],
-        dask_gufunc_kwargs=dict(output_sizes={"lag": nlags + 1}),
-    ).assign_coords({"lag": range(nlags + 1)})
-
-
-def student_t(N, r):
-    """
-    Return the Student-t distribution for null correlation
-
-    Parameters
-    ----------
-    N : int
-        The number of correlation samples
-    r : numpy array
-        The correlation values at which to return the pdf(r)
-    """
-    from scipy.stats import beta
-
-    a = N / 2 - 1
-    b = N / 2 - 1
-    return beta(a, b, loc=-1, scale=2).pdf(r)
-
-
-def extract_lon_lat_box(ds, box, weighted_average, lon_dim="lon", lat_dim="lat", area_name="area"):
+def extract_lon_lat_box(
+    ds, box, weighted_average, lon_dim="lon", lat_dim="lat", area_name="area"
+):
     """
     Return a region specified by a range of longitudes and latitudes.
 
@@ -128,10 +74,16 @@ def extract_lon_lat_box(ds, box, weighted_average, lon_dim="lon", lat_dim="lat",
         else:
             lon_logic_func = np.logical_and
         lon_inds = np.where(
-            lon_logic_func(ds[lon_dim].values >= box[0], ds[lon_dim].values <= box[1])
+            lon_logic_func(
+                ds[lon_dim].values >= box[0],
+                ds[lon_dim].values <= box[1],
+            )
         )[0]
         lat_inds = np.where(
-            np.logical_and(ds[lat_dim].values >= box[2], ds[lat_dim].values <= box[3])
+            np.logical_and(
+                ds[lat_dim].values >= box[2],
+                ds[lat_dim].values <= box[3],
+            )
         )[0]
         region = ds.isel({lon_dim: lon_inds, lat_dim: lat_inds})
     else:
@@ -157,12 +109,17 @@ def extract_lon_lat_box(ds, box, weighted_average, lon_dim="lon", lat_dim="lat",
         )
     else:
         return region
-    
 
-def extract_subpolar_gyre_region(ds, lon_dim="lon", lat_dim="lat", area_name="area"):
+
+def extract_subpolar_gyre_region(
+    ds,
+    lon_dim="lon",
+    lat_dim="lat",
+    area_name="area",
+):
     """
     Return the average over the subpolar gyre region
-    
+
     Parameters
     ----------
     ds : xarray object
@@ -174,4 +131,34 @@ def extract_subpolar_gyre_region(ds, lon_dim="lon", lat_dim="lat", area_name="ar
     area_name : str, optional
         The name of the area variable
     """
-    return extract_lon_lat_box(ds, box=[310, 350, 45, 60], weighted_average=True, lon_dim=lon_dim, lat_dim=lat_dim, area_name=area_name)
+    return extract_lon_lat_box(
+        ds,
+        box=[310, 350, 45, 60],
+        weighted_average=True,
+        lon_dim=lon_dim,
+        lat_dim=lat_dim,
+        area_name=area_name,
+    )
+
+
+def calculate_NAO_index(ds):
+    """
+    Return the North Atlantic Oscillation index used by Smith et al. (2020)
+
+    Parameters
+    ----------
+    ds : xarray Dataset or DataArray
+        array containing sea level pressure data
+    """
+    Azores_box = extract_lon_lat_box(
+        ds,
+        box=[332, 340, 36, 40],
+        weighted_average=True,
+    )
+    Iceland_box = extract_lon_lat_box(
+        ds,
+        box=[335, 344, 63, 70],
+        weighted_average=True,
+    )
+    nao = Azores_box - Iceland_box
+    return nao - nao.mean("time")
