@@ -191,7 +191,12 @@ def bootstrap_pvalue(
     return samp, p
 
 
-def _get_blocked_random_indices(shape, block_axis, block_size):
+def _get_blocked_random_indices(
+    shape,
+    block_axis,
+    block_size,
+    prev_block_sizes,
+):
     """
     Return indices to randomly sample an axis of an array in consecutive
     (cyclic) blocks
@@ -213,15 +218,22 @@ def _get_blocked_random_indices(shape, block_axis, block_size):
                 )
             )[:length]
 
+    # Don't randomize within an outer block
+    if len(prev_block_sizes) > 0:
+        orig_shape = shape.copy()
+        for i, b in enumerate(prev_block_sizes[::-1]):
+            prev_ax = block_axis - (i + 1)
+            shape[prev_ax] = math.ceil(shape[prev_ax] / b)
+
     if block_size == 1:
-        return np.random.randint(
+        indices = np.random.randint(
             0,
             shape[block_axis],
             shape,
         )
     else:
         non_block_shapes = [s for i, s in enumerate(shape) if i != block_axis]
-        return np.moveaxis(
+        indices = np.moveaxis(
             np.stack(
                 [
                     _random_blocks(shape[block_axis], block_size)
@@ -232,6 +244,16 @@ def _get_blocked_random_indices(shape, block_axis, block_size):
             0,
             block_axis,
         )
+
+    if len(prev_block_sizes) > 0:
+        for i, b in enumerate(prev_block_sizes[::-1]):
+            prev_ax = block_axis - (i + 1)
+            indices = np.repeat(indices, b, axis=prev_ax).take(
+                range(orig_shape[prev_ax]), axis=prev_ax
+            )
+        return indices
+    else:
+        return indices
 
 
 def _n_nested_blocked_random_indices(sizes, n_permutations):
@@ -253,10 +275,12 @@ def _n_nested_blocked_random_indices(sizes, n_permutations):
 
     shape = [s[0] for s in sizes.values()]
     indices = OrderedDict()
+    prev_blocks = []
     for ax, (key, (_, block)) in enumerate(sizes.items()):
         indices[key] = _get_blocked_random_indices(
-            shape[: ax + 1] + [n_permutations], ax, block
+            shape[: ax + 1] + [n_permutations], ax, block, prev_blocks
         )
+        prev_blocks.append(block)
     return indices
 
 
