@@ -501,6 +501,9 @@ def block_bootstrap(*objects, blocks, n_permutations, exclude_dims=None):
                 N = N * value
             return itemsize * N / 1024**2
 
+        if isinstance(ds, xr.DataArray):
+            ds = ds.to_dataset(name="ds")
+        
         chunks = []
         for var in ds.data_vars:
             da = ds[var]
