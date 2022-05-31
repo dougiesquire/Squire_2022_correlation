@@ -162,3 +162,26 @@ def calculate_NAO_index(ds):
     )
     nao = Azores_box - Iceland_box
     return nao - nao.mean("time")
+
+
+def calculate_AMV_index(ds):
+    """
+    Return the Atlantic multidecadal variability index used by Smith et al. (2020)
+
+    Parameters
+    ----------
+    ds : xarray Dataset or DataArray
+        array containing near-surface temperature or sea surface temperature
+    """
+    NA_box = extract_lon_lat_box(
+        ds,
+        box=[280, 360, 0, 60],
+        weighted_average=True,
+    )
+    global_box = extract_lon_lat_box(
+        ds,
+        box=[0, 360, -60, 60],
+        weighted_average=True,
+    )
+    amv = NA_box - global_box
+    return amv - amv.mean("time")

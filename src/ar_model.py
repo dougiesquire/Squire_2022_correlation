@@ -329,7 +329,7 @@ def generate_samples_like(
             n_samples=n_samp,
         )
         expl.plot.line(ax=ax, x="time", label=f"AR({order}) model")
-        ax.plot(ts, label="piControl", color="k")
+        ax.plot(ts, label="Input timeseries", color="k")
         ax.grid()
         ax.set_xlabel("Time")
         ax.set_title("Example fitted timeseries")
@@ -341,7 +341,7 @@ def generate_samples_like(
         stats.acf(expl, partial=True).plot.line(
             ax=ax, x="lag", label=f"AR({order}) model", add_legend=False
         )
-        stats.acf(ts, partial=True).plot(ax=ax, label="piControl", color="k")
+        stats.acf(ts, partial=True).plot(ax=ax, label="Input timeseries", color="k")
         ax.grid()
         ax.set_xlabel("Lag")
         ax.set_title("pACF")
@@ -362,7 +362,7 @@ def generate_samples_like(
         ax.plot(
             (bin_edges[:-1] + bin_edges[1:]) / 2,
             h,
-            label="piControl",
+            label="Input timeseries",
             color="k",
         )
         ax.grid()
@@ -403,11 +403,16 @@ def generate_samples_like(
                 alpha=0.4,
                 label=lab,
             )
+            ax.plot(
+                range(init + 1, init + n_leads + 1),
+                expl.sel(init=init).mean("member"),
+                color=color,
+            )
 
             label = False
 
-        ax.plot(ts, label="piControl", color="k")
-        ax.set_xlim(len(ts) - 200, len(ts))
+        ax.plot(ts, label="Input timeseries", color="k")
+        ax.set_xlim(len(ts) - min(len(ts), 200), len(ts))
         ax.set_xlabel("Time")
         ax.set_title("Example forecasts")
         ax.legend()
@@ -416,12 +421,18 @@ def generate_samples_like(
         # Example outputs
         ax = fig.add_subplot(4, 1, 4)
         samples_plot = samples
+        ts_plot = ts
         if "sample" in samples.dims:
             samples_plot = samples_plot.isel(
                 sample=np.random.randint(0, high=len(samples_plot.sample))
             )
+
         if "rolling_mean" in samples.dims:
-            samples_plot = samples_plot.isel(rolling_mean=-1)
+            av = samples_plot.rolling_mean.values[-1]
+            samples_plot = samples_plot.sel(rolling_mean=av)
+            ts_plot = ts.rolling({"time": av}, min_periods=av, center=False).mean(
+                "time"
+            )
 
         if "member" in samples.dims:
             samples_plot.plot.line(
@@ -431,9 +442,15 @@ def generate_samples_like(
             )
             samples_plot.sel(member=1).plot(label="Simulated member 1")
             samples_plot.mean("member").plot(label="Simulated ensemble mean")
-            ax.legend()
         else:
             samples_plot.plot()
+        ax.plot(
+            range(1, samples_plot.sizes["time"] + 1),
+            ts_plot.isel(time=slice(-samples_plot.sizes["time"], None)),
+            label="Input timeseries",
+            color="k",
+        )
+        ax.legend()
         ax.set_xlabel("Time")
         ax.set_title(f"Example sample: {ax.get_title()}")
         ax.grid()

@@ -75,6 +75,43 @@ def student_t(N, r):
 # ===============================================
 
 
+def get_Type_I_error_rates(
+    fcst, obsv, n_times, n_members, metric, method, method_kwargs, alpha=0.05
+):
+    """
+    Returns the Type I error rates for infering a specified metric using a specified method
+
+    Parameters
+    ----------
+    fcst : xarray object
+        The simulated forecasts
+    obsv : xarray object
+        The simulated observations
+    n_times : list
+        List of sample lengths in time to calculate the error rates for
+    n_members : list
+        List of number of ensemble members to calculate the error rates for
+    alpha : float, optional
+        The alpha level to calculate the error rates at
+    """
+    import itertools
+
+    res = []
+    for Nt in n_times:
+        res_mem = []
+        for Nm in n_members:
+            _, pval = infer_metric(
+                fcst.sel(time=slice(0, Nt), member=slice(0, Nm)),
+                obsv.sel(time=slice(0, Nt)),
+                metric=metric,
+                method=method,
+                method_kwargs=method_kwargs,
+            )
+            res_mem.append(pval.assign_coords({"n_members": Nm, "n_times": Nt}))
+        res.append(xr.concat(res_mem, dim="n_members"))
+    return (xr.concat(res, dim="n_times") < alpha).mean("sample")
+
+
 def infer_metric(a, b, metric, method, method_kwargs=None, dim="time"):
     """
     Return skill metric(s) between two series and corresponding p-value(s)
@@ -112,8 +149,12 @@ def pearson_r(a, b, dim="time"):
     b : xarray Dataset
         Input object
     """
+    if "member" in a.dims:
+        a = a.mean("member")
+    if "member" in b.dims:
+        b = b.mean("member")
 
-    return xs.pearson_r(a.mean("member"), b, dim)
+    return xs.pearson_r(a, b, dim)
 
 
 def Fisher_z(ds):
@@ -503,7 +544,7 @@ def block_bootstrap(*objects, blocks, n_permutations, exclude_dims=None):
 
         if isinstance(ds, xr.DataArray):
             ds = ds.to_dataset(name="ds")
-        
+
         chunks = []
         for var in ds.data_vars:
             da = ds[var]
