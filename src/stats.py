@@ -4,6 +4,8 @@ import sys
 
 import math
 
+import scipy
+
 import numpy as np
 
 import xarray as xr
@@ -69,6 +71,29 @@ def student_t(N, r):
     a = N / 2 - 1
     b = N / 2 - 1
     return beta(a, b, loc=-1, scale=2).pdf(r)
+
+
+def mode(ds, dim):
+    """
+    xarray wrapper on scipy.stats.mode
+
+    Parameters
+    ----------
+    ds : xarray object
+        The input data
+    dim : str
+        The dimension along which to compute the mode
+    """
+    def _mode(data):
+        m, _ = scipy.stats.mode(data, axis=-1, nan_policy='omit')
+        return m.squeeze()
+
+    return xr.apply_ufunc(
+        _mode, 
+        ds,
+        input_core_dims=[[dim]],
+        exclude_dims=set([dim]),
+        dask="parallelized")
 
 
 # Metrics
@@ -169,8 +194,54 @@ def Fisher_z(ds):
     return np.arctanh(ds)
 
 
+def effective_sample_size(fcst, obsv, N=None, dim="time"):
+    """
+    Return the effective sample size for temporally correlated data.
+
+           1 - pf * po
+    Neff = ----------- * N = P * N
+           1 + pf * po
+
+    where pf and po are the lag-1 autocorrelation coefficients of the
+    forecast and observations
+
+    Parameters
+    ----------
+    fcst :  xarray object
+        The forecast data
+    obsv : xarray object
+        The observed data
+    N : int, optional
+        Provide this if you wish to estimate the coefficient P using
+        fcst and obsv, but return Neff for a different sample size N
+        than was available in fcst and obsv
+    dim : str, optional
+        The name of the time dimension
+    """
+
+    Neff = xs.effective_sample_size(fcst, obsv)
+
+    if N is not None:
+        P = Neff / fcst.sizes[dim]
+        return P * N
+    else:
+        return Neff
+
+
 # Bootstrapping
 # ===============================================
+
+
+def _get_pval_from_bootstrap(sample, permutations, null, transform):
+    """ Calculate p-value(s) from bootstrapped permutations """
+    if transform:
+        transform = getattr(sys.modules[__name__], transform)
+        null = transform(null)
+        permutations = transform(permutations)
+
+    left_tail_p = xr.where(permutations < null, 1, 0).mean("permutation") * 2
+    right_tail_p = xr.where(permutations > null, 1, 0).mean("permutation") * 2
+    return xr.where(sample >= 0, left_tail_p, right_tail_p)
 
 
 def bootstrap_pvalue(
@@ -181,6 +252,7 @@ def bootstrap_pvalue(
     blocks,
     n_permutations,
     transform,
+    return_permutations=False
 ):
     """
     Determine the two-tail p-value(s) for a given metric by block-
@@ -207,8 +279,7 @@ def bootstrap_pvalue(
     """
 
     metric = getattr(sys.modules[__name__], metric)
-    transform = getattr(sys.modules[__name__], transform)
-
+    
     samp = metric(a, b, metric_dim)
     permutations = metric(
         *block_bootstrap(
@@ -220,16 +291,16 @@ def bootstrap_pvalue(
         metric_dim,
     )
 
-    null = 0
-    if transform:
-        null = transform(null)
-        permutations = transform(permutations)
-
-    left_tail_p = xr.where(permutations < null, 1, 0).mean("permutation") * 2
-    right_tail_p = xr.where(permutations > null, 1, 0).mean("permutation") * 2
-    p = xr.where(samp >= 0, left_tail_p, right_tail_p)
-
-    return samp, p
+    if return_permutations:
+        return samp, permutations
+    else:
+        pval = _get_pval_from_bootstrap(
+            samp, 
+            permutations, 
+            null=0, 
+            transform=transform
+        )
+        return samp, pval
 
 
 def _get_blocked_random_indices(

@@ -54,7 +54,7 @@ def fit(
     order,
     dim="time",
     ar_kwargs=dict(trend="n"),
-    select_order_kwargs=dict(maxlag=10, ic="bic", glob=False, trend="n"),
+    select_order_kwargs=dict(maxlag=10, ic="aic", glob=False, trend="n"),
 ):
     """
     Fit an AR model(s)
@@ -119,8 +119,8 @@ def fit(
     )
     res = res.assign_coords(
         {"params": [f"phi_{lag}" for lag in range(1, n_params)] + ["sigma_e"]}
-    ).dropna("params")
-    res = res.assign_coords({"order": res.count("params").values - 1})
+    ).dropna("params", how="all")
+    res = res.assign_coords({"order": res.count("params") - 1})
     return res
 
 
@@ -201,7 +201,7 @@ def generate_samples(
                 res.append(rm)
 
         s = xr.concat(res, dim="rolling_mean", join="inner")
-        s = s.assign_coords({"time": range(1, s.sizes["time"] + 1)})
+    s = s.assign_coords({"time": range(1, s.sizes["time"] + 1)})
 
     return s.squeeze(drop=True)
 
@@ -282,7 +282,9 @@ def generate_samples_like(
     Parameters
     ----------
     ts : xarray object
-        The timeseries to fit the AR model to
+        The timeseries to fit the AR model to. If a "member" dimension exists,
+        AR params are calculated for each member separately and the ensemble
+        mean parameters are used to generate the synthetic signals.
     order : int or str
         The order of the AR(n) process to fit. Alternatively, users can pass
         the string "select_order" in order to use
@@ -303,6 +305,10 @@ def generate_samples_like(
     """
 
     p = fit(ts, order=order)
+    if "member" in p.dims:
+        # Use the most common order and average params across members
+        order = stats.mode(p.order, dim="member").compute().item()
+        p = fit(ts, order=order).mean("member").assign_coords({"order": order})
     order = p.order.values
     params = p.isel(params=slice(0, -1)).values
     scale = p.isel(params=-1).values
@@ -318,18 +324,29 @@ def generate_samples_like(
 
     if plot_diagnostics:
         fig = plt.figure(figsize=(12, 14))
-
+        
+        alpha = 0.2
+        q = (0.05, 0.95)
+        
+        if "member" in ts.dims:
+            ts_m = ts.mean("member")
+            ts_r = (ts.quantile(q[0], "member"), ts.quantile(q[1], "member"))
+        else:
+            ts_m = ts
+            
         # Example timeseries
         ax = fig.add_subplot(4, 1, 1)
-        n_samp = 4
+        n_samp = 3
         expl = generate_samples(
             params,
             scale,
             n_times=len(ts),
             n_samples=n_samp,
         )
-        expl.plot.line(ax=ax, x="time", label=f"AR({order}) model")
-        ax.plot(ts, label="Input timeseries", color="k")
+        expl.plot.line(ax=ax, x="time", label=f"AR({order}) model series")
+        if "member" in ts.dims:
+            ax.fill_between(range(1,len(ts_m)+1), ts_r[0], ts_r[1], label="_nolabel_", color="k", edgecolor="none", alpha=alpha)
+        ax.plot(range(1,len(ts_m)+1), ts_m, label="Input timeseries", color="k")
         ax.grid()
         ax.set_xlabel("Time")
         ax.set_title("Example fitted timeseries")
@@ -339,9 +356,15 @@ def generate_samples_like(
         # Partial ACFs
         ax = fig.add_subplot(4, 2, 3)
         stats.acf(expl, partial=True).plot.line(
-            ax=ax, x="lag", label=f"AR({order}) model", add_legend=False
+            ax=ax, x="lag", label=f"AR({order}) model series", add_legend=False
         )
-        stats.acf(ts, partial=True).plot(ax=ax, label="Input timeseries", color="k")
+        ts_acf = stats.acf(ts, partial=True)
+        if "member" in ts_acf.dims:
+            ts_acf_r = (ts_acf.quantile(q[0], "member"), ts_acf.quantile(q[1], "member"))
+            ax.fill_between(ts_acf.lag, ts_acf_r[0], ts_acf_r[1], label="_nolabel_", color="k", edgecolor="none", alpha=alpha)
+            ts_acf.mean("member").plot(ax=ax, label="Input timeseries", color="k")
+        else:
+            ts_acf.plot(ax=ax, label="Input timeseries", color="k")
         ax.grid()
         ax.set_xlabel("Lag")
         ax.set_title("pACF")
@@ -357,7 +380,7 @@ def generate_samples_like(
                 30,
                 alpha=0.6,
                 density=True,
-                label=f"AR({order}) model",
+                label=f"AR({order}) model series",
             )
         ax.plot(
             (bin_edges[:-1] + bin_edges[1:]) / 2,
@@ -374,18 +397,19 @@ def generate_samples_like(
         ax = fig.add_subplot(4, 1, 3)
         n_leads = max(rolling_means) if rolling_means is not None else 10
         n_mem = n_members if n_members is not None else 50
-        expl = predict(
+        init = expl.isel(sample=0)
+        fcst = predict(
             params,
-            ts,
+            init,
             n_leads,
             n_members=n_mem,
             scale=scale,
         )
-        inits = expl.init[::n_leads]
+        inits = fcst.init[::n_leads]
         colors = [f"C{i}" for i in range(0, 10)]
         colorcycler = cycle(colors)
         label = True
-        for init in inits.values:
+        for i in inits.values:
             color = next(colorcycler)
 
             if label:
@@ -393,10 +417,10 @@ def generate_samples_like(
             else:
                 lab = "__nolabel__"
 
-            q1 = expl.sel(init=init).quantile(0.05, dim="member")
-            q2 = expl.sel(init=init).quantile(0.95, dim="member")
+            q1 = fcst.sel(init=i).quantile(0.05, dim="member")
+            q2 = fcst.sel(init=i).quantile(0.95, dim="member")
             ax.fill_between(
-                range(init + 1, init + n_leads + 1),
+                range(i + 1, i + n_leads + 1),
                 q1,
                 q2,
                 color=color,
@@ -404,14 +428,13 @@ def generate_samples_like(
                 label=lab,
             )
             ax.plot(
-                range(init + 1, init + n_leads + 1),
-                expl.sel(init=init).mean("member"),
+                range(i + 1, i + n_leads + 1),
+                fcst.sel(init=i).mean("member"),
                 color=color,
             )
 
             label = False
-
-        ax.plot(ts, label="Input timeseries", color="k")
+        ax.plot(init, label=f"AR({order}) model series", color="k")
         ax.set_xlim(len(ts) - min(len(ts), 200), len(ts))
         ax.set_xlabel("Time")
         ax.set_title("Example forecasts")
@@ -421,7 +444,7 @@ def generate_samples_like(
         # Example outputs
         ax = fig.add_subplot(4, 1, 4)
         samples_plot = samples
-        ts_plot = ts
+        ts_plot = ts_m
         if "sample" in samples.dims:
             samples_plot = samples_plot.isel(
                 sample=np.random.randint(0, high=len(samples_plot.sample))
@@ -430,7 +453,7 @@ def generate_samples_like(
         if "rolling_mean" in samples.dims:
             av = samples_plot.rolling_mean.values[-1]
             samples_plot = samples_plot.sel(rolling_mean=av)
-            ts_plot = ts.rolling({"time": av}, min_periods=av, center=False).mean(
+            ts_plot = ts_plot.rolling({"time": av}, min_periods=av, center=False).mean(
                 "time"
             )
 
@@ -444,10 +467,14 @@ def generate_samples_like(
             samples_plot.mean("member").plot(label="Simulated ensemble mean")
         else:
             samples_plot.plot()
+        if "member" in ts.dims:
+            lab = "Input timeseries, ensemble mean"
+        else:
+            lab = "Input timeseries"
         ax.plot(
             range(1, samples_plot.sizes["time"] + 1),
             ts_plot.isel(time=slice(-samples_plot.sizes["time"], None)),
-            label="Input timeseries",
+            label=lab,
             color="k",
         )
         ax.legend()
