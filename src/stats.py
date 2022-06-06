@@ -232,15 +232,34 @@ def effective_sample_size(fcst, obsv, N=None, dim="time"):
 # ===============================================
 
 
-def _get_pval_from_bootstrap(sample, permutations, null, transform):
-    """ Calculate p-value(s) from bootstrapped permutations """
+def blocklength_Wilks(N, N_eff):
+    """
+    Return the block size to use for block boostrapping according to Wilks, pg 191
+
+    Parameters
+    ----------
+    N : int
+        The sample size
+    N_eff : float
+        The effective sample size
+    """
+    from scipy.optimize import fsolve
+
+    def f(L, N, N_eff):
+        return (N - L + 1) ** ((2 / 3) * (1 - (N_eff / N))) - L
+
+    return round(fsolve(f, 5, args=(N, N_eff))[0])
+
+
+def _get_pval_from_bootstrap(sample, iterations, null, transform):
+    """ Calculate p-value(s) from bootstrapped iterations """
     if transform:
         transform = getattr(sys.modules[__name__], transform)
         null = transform(null)
-        permutations = transform(permutations)
+        iterations = transform(iterations)
 
-    left_tail_p = xr.where(permutations < null, 1, 0).mean("permutation") * 2
-    right_tail_p = xr.where(permutations > null, 1, 0).mean("permutation") * 2
+    left_tail_p = xr.where(iterations < null, 1, 0).mean("iteration") * 2
+    right_tail_p = xr.where(iterations > null, 1, 0).mean("iteration") * 2
     return xr.where(sample >= 0, left_tail_p, right_tail_p)
 
 
@@ -250,9 +269,9 @@ def bootstrap_pvalue(
     metric,
     metric_dim,
     blocks,
-    n_permutations,
+    n_iteration,
     transform,
-    return_permutations=False
+    return_iterations=False
 ):
     """
     Determine the two-tail p-value(s) for a given metric by block-
@@ -271,7 +290,7 @@ def bootstrap_pvalue(
     blocks : dict
         Dictionary of the dimension(s) to bootstrap and the block sizes to use
         along each dimension: {dim: blocksize}.
-    n_permutations : int
+    n_iteration : int
         The number of times to repeat the bootstrapping
     transform : str
         Transform to apply prior to estimating significant points. Must be the
@@ -281,22 +300,22 @@ def bootstrap_pvalue(
     metric = getattr(sys.modules[__name__], metric)
     
     samp = metric(a, b, metric_dim)
-    permutations = metric(
+    iterations = metric(
         *block_bootstrap(
             a,
             b,
             blocks=blocks,
-            n_permutations=n_permutations,
+            n_iteration=n_iteration,
         ),
         metric_dim,
     )
 
-    if return_permutations:
-        return samp, permutations
+    if return_iterations:
+        return samp, iterations
     else:
         pval = _get_pval_from_bootstrap(
             samp, 
-            permutations, 
+            iterations, 
             null=0, 
             transform=transform
         )
@@ -368,7 +387,7 @@ def _get_blocked_random_indices(
         return indices
 
 
-def _n_nested_blocked_random_indices(sizes, n_permutations):
+def _n_nested_blocked_random_indices(sizes, n_iteration):
     """
     Returns indices to randomly resample blocks of an array (with replacement)
     in a nested manner many times. Here, "nested" resampling means to randomly
@@ -381,7 +400,7 @@ def _n_nested_blocked_random_indices(sizes, n_permutations):
     ----------
     sizes : OrderedDict
         Dictionary with {names: (sizes, blocks)} of the dimensions to resample
-    n_permutations : int
+    n_iteration : int
         The number of times to repeat the random resampling
     """
 
@@ -390,7 +409,7 @@ def _n_nested_blocked_random_indices(sizes, n_permutations):
     prev_blocks = []
     for ax, (key, (_, block)) in enumerate(sizes.items()):
         indices[key] = _get_blocked_random_indices(
-            shape[: ax + 1] + [n_permutations], ax, block, prev_blocks
+            shape[: ax + 1] + [n_iteration], ax, block, prev_blocks
         )
         prev_blocks.append(block)
     return indices
@@ -406,7 +425,7 @@ def _expand_n_nested_random_indices(indices):
     indices : list of numpy arrays
         List of numpy arrays of sequentially increasing dimension as output by
         the function `_n_nested_blocked_random_indices`. The last axis on all
-        inputs is assumed to correspond to the permutation axis
+        inputs is assumed to correspond to the iteration axis
     """
     broadcast_ndim = indices[-1].ndim
     broadcast_indices = []
@@ -416,19 +435,19 @@ def _expand_n_nested_random_indices(indices):
     return (..., *tuple(broadcast_indices))
 
 
-def _block_bootstrap(*objects, blocks, n_permutations, exclude_dims=None):
+def _block_bootstrap(*objects, blocks, n_iteration, exclude_dims=None):
     """
     Repeatedly bootstrap the provided arrays across the specified dimension(s)
-    and stack the new arrays along a new "permutation" dimension. The
+    and stack the new arrays along a new "iteration" dimension. The
     boostrapping is done in a nested manner. I.e. bootstrap the first provided
     dimension, then for each bootstrapped sample along that dimenion, bootstrap
     the second provided dimension, then for each bootstrapped sample along that
     dimenion...
 
-    Note, this function expands out the permutation dimension inside a
+    Note, this function expands out the iteration dimension inside a
     universal function. However, this can generate very large chunks (it
-    multiplies chunk size by the number of permutations) and it falls over for
-    large numbers of permutations for reasons I don't understand. It is thus
+    multiplies chunk size by the number of iterations) and it falls over for
+    large numbers of iterations for reasons I don't understand. It is thus
     best to apply this function in blocks using `block_bootstrap`
 
     Parameters
@@ -444,7 +463,7 @@ def _block_bootstrap(*objects, blocks, n_permutations, exclude_dims=None):
     blocks : dict
         Dictionary of the dimension(s) to bootstrap and the block sizes to use
         along each dimension: {dim: blocksize}.
-    n_permutations : int
+    n_iteration : int
         The number of times to repeat the bootstrapping
     exclude_dims : list of list
         List of the same length as the number of objects giving a list of
@@ -509,7 +528,7 @@ def _block_bootstrap(*objects, blocks, n_permutations, exclude_dims=None):
     # dask chunk uses the same indices. Note, I tried using random.seed()
     # to achieve this but it was flaky. These are the indices to bootstrap
     # all objects.
-    nested_indices = _n_nested_blocked_random_indices(sizes, n_permutations)
+    nested_indices = _n_nested_blocked_random_indices(sizes, n_iteration)
 
     # Need to expand the indices for broadcasting for each object separately
     # as each object may have different dimensions
@@ -521,7 +540,7 @@ def _block_bootstrap(*objects, blocks, n_permutations, exclude_dims=None):
 
         # Check that dimensions are nested
         ndims = [i.ndim for i in indices_to_expand]
-        # Start at 2 due to permutation dim
+        # Start at 2 due to iteration dim
         if ndims != list(range(2, len(ndims) + 2)):
             raise ValueError("The dimensions of all inputs must be nested")
 
@@ -547,10 +566,10 @@ def _block_bootstrap(*objects, blocks, n_permutations, exclude_dims=None):
                     indices=[ind],
                 ),
                 input_core_dims=[core_dims],
-                output_core_dims=[core_dims + ["permutation"]],
+                output_core_dims=[core_dims + ["iteration"]],
                 dask="parallelized",
                 dask_gufunc_kwargs=dict(
-                    output_sizes={"permutation": n_permutations},
+                    output_sizes={"iteration": n_iteration},
                 ),
                 output_dtypes=[output_dtype],
             )
@@ -560,10 +579,10 @@ def _block_bootstrap(*objects, blocks, n_permutations, exclude_dims=None):
     return tuple(res.rename(rename) for res, rename in zip(result, renames))
 
 
-def block_bootstrap(*objects, blocks, n_permutations, exclude_dims=None):
+def block_bootstrap(*objects, blocks, n_iteration, exclude_dims=None):
     """
     Repeatedly bootstrap the provided arrays across the specified
-    dimension(s) and stack the new arrays along a new "permutation"
+    dimension(s) and stack the new arrays along a new "iteration"
     dimension. The boostrapping is done in a nested manner. I.e. bootstrap
     the first provided dimension, then for each bootstrapped sample along
     that dimenion, bootstrap the second provided dimension, then for each
@@ -582,20 +601,20 @@ def block_bootstrap(*objects, blocks, n_permutations, exclude_dims=None):
     blocks : dict
         Dictionary of the dimension(s) to bootstrap and the block sizes to use
         along each dimension: {dim: blocksize}.
-    n_permutations : int
+    n_iteration : int
         The number of times to repeat the bootstrapping
     exclude_dims : list of list
         List of the same length as the number of objects giving a list of
         dimensions specifed in `blocks` to exclude from each object. Default
         is to assume that no dimensions are excluded.
     """
-    # The fastest way to perform the permutations is to expand out the
-    # permutation dimension inside the universal function (see
+    # The fastest way to perform the iterations is to expand out the
+    # iteration dimension inside the universal function (see
     # _iterative_bootstrap). However, this can generate very large chunks (it
-    # multiplies chunk size by the number of permutations) and it falls over
-    # for large numbers of permutations for reasons I don't understand. Thus
-    # here we loop over blocks of permutations to generate the total number
-    # of permutations.
+    # multiplies chunk size by the number of iterations) and it falls over
+    # for large numbers of iterations for reasons I don't understand. Thus
+    # here we loop over blocks of iterations to generate the total number
+    # of iterations.
 
     def _max_chunk_size_MB(ds):
         """
@@ -628,7 +647,7 @@ def block_bootstrap(*objects, blocks, n_permutations, exclude_dims=None):
                 chunks.append(size_of_chunk(chunk, itemsize))
         return max(chunks)
 
-    # Choose permutation blocks to limit chunk size on dask arrays
+    # Choose iteration blocks to limit chunk size on dask arrays
     if objects[
         0
     ].chunks:  # TO DO: this is not a very good check that input is dask array
@@ -637,31 +656,31 @@ def block_bootstrap(*objects, blocks, n_permutations, exclude_dims=None):
             [_max_chunk_size_MB(obj) for obj in objects],
         )
         blocksize = int(MAX_CHUNK_SIZE_MB / ds_max_chunk_size_MB)
-        if blocksize > n_permutations:
-            blocksize = n_permutations
+        if blocksize > n_iteration:
+            blocksize = n_iteration
         if blocksize < 1:
             blocksize = 1
     else:
-        blocksize = n_permutations
+        blocksize = n_iteration
 
     bootstraps = []
-    for _ in range(blocksize, n_permutations + 1, blocksize):
+    for _ in range(blocksize, n_iteration + 1, blocksize):
         bootstraps.append(
             _block_bootstrap(
                 *objects,
                 blocks=blocks,
-                n_permutations=blocksize,
+                n_iteration=blocksize,
                 exclude_dims=exclude_dims,
             )
         )
 
-    leftover = n_permutations % blocksize
+    leftover = n_iteration % blocksize
     if leftover:
         bootstraps.append(
             _block_bootstrap(
                 *objects,
                 blocks=blocks,
-                n_permutations=leftover,
+                n_iteration=leftover,
                 exclude_dims=exclude_dims,
             )
         )
@@ -670,7 +689,7 @@ def block_bootstrap(*objects, blocks, n_permutations, exclude_dims=None):
         [
             xr.concat(
                 b,
-                dim="permutation",
+                dim="iteration",
                 coords="minimal",
                 compat="override",
             )

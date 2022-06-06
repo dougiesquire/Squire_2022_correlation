@@ -40,9 +40,9 @@ def pearson_r_distributions(fcst, obsv, sample, block):
         metric="pearson_r",
         metric_dim="time",
         blocks={"time": block, "member": 1},
-        n_permutations=10_000,
+        n_iteration=10_000,
         transform="Fisher_z",
-        return_permutations=True,
+        return_iterations=True,
     )
     pval_bs = stats._get_pval_from_bootstrap(r, r_bs, null=0, transform="Fisher_z")
 
@@ -169,7 +169,7 @@ def acf(*objects, headings, partial=False, panel_dim="rolling_mean", nlags=20):
     fig = plt.figure(figsize=(14, 5 * nrows))
     axs = fig.subplots(nrows, 1, sharex=True)
     alpha = 0.3
-    quantiles = (0.5, 0.95)
+    quantiles = (0.05, 0.95)
 
     linecycler = cycle(["-", "--", "-.", ":"])
     for heading, obj in zip(headings, objects):

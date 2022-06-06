@@ -187,30 +187,40 @@ def calculate_AMV_index(ds):
     return amv - amv.mean("time")
 
 
-def get_hindcast_rolling_mean(hcst, rolling_means=[1]):
+def get_hindcast_mean(hcst, mean_lead_range=[(0,1)]):
     """
     Given annual hindcasts, return the hindcast over a specified averaging
-    period. Averages are taken over the lead dimension, from index 0 to
-    rolling_mean - 1. The time assigned to the output is the time at the
-    last lead in the averaging period
+    period. Averages are taken over the lead dimension. The time assigned 
+    to the output is the time at the last lead in the averaging period
     
     hcst : xarray object
         The annual hindcast data
-    rolling_means : list, optional
-        A list of lengths of rolling means to compute
+    mean_lead_range : list of tuple
+        A list of lead year ranges to average over. Lead year ranges include
+        the first element in the tuple, but not the last. E.g. (0,1) averages
+        over lead year 0, (1,5) averages over years 1-4 etx
     """
 
-    res = [
-        hcst.isel(lead=0, drop=True)
-        .swap_dims({"init": "time"})
-        .assign_coords({"rolling_mean": 1})
-    ]
-    for av in rolling_means:
-        hcst_mean = hcst.isel(lead=slice(av))
+    res = []
+    for r in mean_lead_range:
+        hcst_mean = hcst.isel(lead=slice(*r))
         hcst_mean = hcst_mean.assign_coords(
             {"time": hcst_mean.time.isel(lead=-1, drop=True)}
         ).mean("lead")
         hcst_mean = hcst_mean.swap_dims({"init": "time"})
-        res.append(hcst_mean.assign_coords({"rolling_mean": av}))
+        res.append(hcst_mean.assign_coords({"rolling_mean": r[1] - r[0]}))
+        
+    # res = [
+    #     hcst.isel(lead=0, drop=True)
+    #     .swap_dims({"init": "time"})
+    #     .assign_coords({"rolling_mean": 1})
+    # ]
+    # for av in rolling_means:
+    #     hcst_mean = hcst.isel(lead=slice(av))
+    #     hcst_mean = hcst_mean.assign_coords(
+    #         {"time": hcst_mean.time.isel(lead=-1, drop=True)}
+    #     ).mean("lead")
+    #     hcst_mean = hcst_mean.swap_dims({"init": "time"})
+    #     res.append(hcst_mean.assign_coords({"rolling_mean": av}))
 
     return xr.concat(res, dim="rolling_mean")
