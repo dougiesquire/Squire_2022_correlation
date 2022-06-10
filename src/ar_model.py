@@ -228,7 +228,7 @@ def predict(params, inits, n_steps, n_members=1, scale=None):
     """
 
     def _epsilon(scale, size):
-        return np.random.normal(scale=0*scale, size=size)
+        return np.random.normal(scale=scale, size=size)
 
     order = len(params)
     params = np.flip(params)
@@ -405,7 +405,7 @@ def generate_samples_like(
             n_members=n_mem,
             scale=scale,
         )
-        inits = fcst.init#[::n_leads]
+        inits = fcst.init[::n_leads]
         colors = [f"C{i}" for i in range(0, 10)]
         colorcycler = cycle(colors)
         label = True
