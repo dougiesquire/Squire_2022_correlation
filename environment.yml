@@ -1,4 +1,4 @@
-name: Squire_2022_correlation
+name: squire_2022_correlation
 channels:
   - conda-forge
 dependencies:

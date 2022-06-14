@@ -7,7 +7,7 @@
 PROJECT_DIR := $(shell dirname $(realpath $(lastword $(MAKEFILE_LIST))))
 PROFILE = default
 PROJECT_NAME = Squire_2022_correlation
-ENV_NAME = Squire_2022_correlation
+ENV_NAME = squire_2022_correlation
 
 ifeq (,$(shell which conda))
 HAS_CONDA=False
@@ -38,7 +38,7 @@ endif
 else
  	@echo ">>> This project uses conda to install the environment. Please install conda"
 endif
-	$(CONDA_ACTIVATE) $(ENV_NAME) ; python -m ipykernel install --user --name $(ENV_NAME) --display-name "Python ($(ENV_NAME))"
+	$(CONDA_ACTIVATE) $(ENV_NAME) ; jupyter kernelspec uninstall -y $(ENV_NAME) ; python -m ipykernel install --user --name $(ENV_NAME) --display-name "Python ($(ENV_NAME))"
 
 ## Delete unneeded Python files, dask-worker files and PBS output files
 clean:
