@@ -458,13 +458,16 @@ def generate_samples_like(
             )
 
         if "member" in samples.dims:
-            samples_plot.plot.line(
-                x="time",
-                color=[0.7, 0.7, 0.7],
-                add_legend=False,
+            ax.fill_between(
+                samples_plot.time.values,
+                samples_plot.quantile(0.05, dim="member"),
+                samples_plot.quantile(0.95, dim="member"),
+                color="C0",
+                edgecolor="none",
+                alpha=0.4
             )
-            samples_plot.sel(member=1).plot(label="Simulated member 1")
-            samples_plot.mean("member").plot(label="Simulated ensemble mean")
+            samples_plot.sel(member=1).plot(color="C0", linestyle="--", label="Simulated member 1")
+            samples_plot.mean("member").plot(color="C0", label="Simulated ensemble mean")
         else:
             samples_plot.plot()
         if "member" in ts.dims:

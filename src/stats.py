@@ -116,6 +116,12 @@ def get_Type_I_error_rates(
         List of sample lengths in time to calculate the error rates for
     n_members : list
         List of number of ensemble members to calculate the error rates for
+    metric : str
+        The metric to infer. Must be the name of a method in src.stats
+    method : str
+        The method to use to determine the p-value(s). Options are "bootstrap"
+    method_kwargs : dict
+        kwargs to pass to method
     alpha : float, optional
         The alpha level to calculate the error rates at
     """
