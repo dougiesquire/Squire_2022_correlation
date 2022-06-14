@@ -187,6 +187,32 @@ def calculate_AMV_index(ds):
     return amv - amv.mean("time")
 
 
+def gridarea_cdo(ds):
+    """
+    Returns the area weights computed using cdo's gridarea function
+    Note, this function writes ds to disk, so strip back ds to only what is needed
+
+    Parameters
+    ----------
+    ds : xarray Dataset
+        The dataset to passed to cdo gridarea
+    """
+    import os
+    import uuid
+    from cdo import Cdo
+
+    infile = uuid.uuid4().hex
+    outfile = uuid.uuid4().hex
+    ds.to_netcdf(f"./{infile}.nc")
+
+    Cdo().gridarea(input=f"./{infile}.nc", output=f"./{outfile}.nc")
+
+    weights = xr.open_dataset(f"./{outfile}.nc").load()
+    os.remove(f"./{infile}.nc")
+    os.remove(f"./{outfile}.nc")
+    return weights["cell_area"]
+
+
 def get_hindcast_mean(hcst, mean_lead_range=[(0,1)]):
     """
     Given annual hindcasts, return the hindcast over a specified averaging
@@ -198,7 +224,7 @@ def get_hindcast_mean(hcst, mean_lead_range=[(0,1)]):
     mean_lead_range : list of tuple
         A list of lead year ranges to average over. Lead year ranges include
         the first element in the tuple, but not the last. E.g. (0,1) averages
-        over lead year 0, (1,5) averages over years 1-4 etx
+        over lead year 0, (1,5) averages over years 1-4 etc
     """
 
     res = []
@@ -209,18 +235,25 @@ def get_hindcast_mean(hcst, mean_lead_range=[(0,1)]):
         ).mean("lead")
         hcst_mean = hcst_mean.swap_dims({"init": "time"})
         res.append(hcst_mean.assign_coords({"rolling_mean": r[1] - r[0]}))
-        
-    # res = [
-    #     hcst.isel(lead=0, drop=True)
-    #     .swap_dims({"init": "time"})
-    #     .assign_coords({"rolling_mean": 1})
-    # ]
-    # for av in rolling_means:
-    #     hcst_mean = hcst.isel(lead=slice(av))
-    #     hcst_mean = hcst_mean.assign_coords(
-    #         {"time": hcst_mean.time.isel(lead=-1, drop=True)}
-    #     ).mean("lead")
-    #     hcst_mean = hcst_mean.swap_dims({"init": "time"})
-    #     res.append(hcst_mean.assign_coords({"rolling_mean": av}))
+
+    return xr.concat(res, dim="rolling_mean")
+
+
+def get_observation_rolling_mean(ds, rolling_mean):
+    """
+    Return the specified rolling means along the time dimension
+
+    ds : xarray object
+        The data to rolling average
+    window : list of int
+        A list of window lengths
+    """
+    res = []
+    for av in rolling_mean:
+        rm = (
+            ds.rolling({"time": av}, min_periods=av, center=False).mean().dropna("time")
+        )
+        rm = rm.assign_coords({"rolling_mean": av})
+        res.append(rm)
 
     return xr.concat(res, dim="rolling_mean")
