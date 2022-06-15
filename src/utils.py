@@ -187,32 +187,6 @@ def calculate_AMV_index(ds):
     return amv - amv.mean("time")
 
 
-def gridarea_cdo(ds):
-    """
-    Returns the area weights computed using cdo's gridarea function
-    Note, this function writes ds to disk, so strip back ds to only what is needed
-
-    Parameters
-    ----------
-    ds : xarray Dataset
-        The dataset to passed to cdo gridarea
-    """
-    import os
-    import uuid
-    from cdo import Cdo
-
-    infile = uuid.uuid4().hex
-    outfile = uuid.uuid4().hex
-    ds.to_netcdf(f"./{infile}.nc")
-
-    Cdo().gridarea(input=f"./{infile}.nc", output=f"./{outfile}.nc")
-
-    weights = xr.open_dataset(f"./{outfile}.nc").load()
-    os.remove(f"./{infile}.nc")
-    os.remove(f"./{outfile}.nc")
-    return weights["cell_area"]
-
-
 def get_hindcast_mean(hcst, mean_lead_range=[(0,1)]):
     """
     Given annual hindcasts, return the hindcast over a specified averaging
