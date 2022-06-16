@@ -11,7 +11,8 @@ import matplotlib.pyplot as plt
 
 def pearson_r_distributions(fcst, obsv, sample, block):
     """
-    Plot the various distributions used for inference of the Pearson correlation coefficient
+    Plot the various distributions used for inference of the Pearson correlation
+    coefficient
 
     Parameters
     ----------
@@ -65,7 +66,7 @@ def pearson_r_distributions(fcst, obsv, sample, block):
     # Monte-Carlo null distribution
     color = next(colorcycler)
     r_mc = stats.pearson_r(fcst, obsv)
-    pval_mc = 2*((np.sign(r_mc) == np.sign(r)) & (abs(r_mc) > abs(r))).mean("sample")
+    pval_mc = 2 * ((np.sign(r_mc) == np.sign(r)) & (abs(r_mc) > abs(r))).mean("sample")
     h, b = np.histogram(
         r_mc,
         30,
@@ -127,7 +128,7 @@ def pearson_r_distributions(fcst, obsv, sample, block):
         label="Sample correlation",
     )
     ax.set_ylim(ylim)
-    
+
     _ = ax.text(
         0.01,
         0.68,
@@ -143,8 +144,8 @@ def pearson_r_distributions(fcst, obsv, sample, block):
 
     ax.grid()
     ax.legend(loc="upper left")
-    
-    
+
+
 def acf(*objects, headings, partial=False, panel_dim="rolling_mean", nlags=20):
     """
     Plot the autocorrelation function for multiple objects

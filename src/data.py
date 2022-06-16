@@ -15,6 +15,7 @@ PROJECT_DIR = Path(__file__).resolve().parents[1]
 RAW_DATA_DIR = PROJECT_DIR / "data/raw"
 PROCESSED_DATA_DIR = PROJECT_DIR / "data/processed"
 
+
 def convert_time_to_lead(
     ds, time_dim="time", time_freq=None, init_dim="init", lead_dim="lead"
 ):
@@ -55,27 +56,6 @@ def convert_time_to_lead(
     return dataset
 
 
-def round_to_start_of_month(ds, dim):
-    """
-    Return provided array with specified time dimension rounded to the start of
-    the month
-
-    Parameters
-    ----------
-    ds : xarray Dataset
-        The dataset with a dimension(s) to round
-    dim : str
-        The name of the dimensions to round
-    """
-    from xarray.coding.cftime_offsets import MonthBegin
-
-    if isinstance(dim, str):
-        dim = [dim]
-    for d in dim:
-        ds = ds.copy().assign_coords({d: ds[d].compute().dt.floor("D") - MonthBegin()})
-    return ds
-
-
 def gridarea_cdo(ds):
     """
     Returns the area weights computed using cdo's gridarea function
@@ -108,7 +88,10 @@ def _cmip6_dcpp(
     """Open CMIP6 dcpp variables from specified monthly realm"""
 
     def _dcpp_file(y, m, v):
-        path = f"{RAW_DATA_DIR}/{model}_{experiment}/s{y}-r{m}{variant_id}/{realm}/{v}/{grid}"
+        path = (
+            f"{RAW_DATA_DIR}/{model}_{experiment}/s{y}-r{m}{variant_id}/"
+            f"{realm}/{v}/{grid}"
+        )
         if version == "latest":
             versions = sorted(glob.glob(f"{path}/v????????"))
             if len(versions) == 0:
@@ -142,19 +125,21 @@ def _cmip6_dcpp(
     time = []
     for idx, y in enumerate(years):
         d0 = _open_dcpp(y, members[0], variables[0])
-         # Ensure calendars are all the same
+        # Ensure calendars are all the same
         if idx == 0:
             calendar = d0.time.dt.calendar
         time.append(d0.convert_calendar(calendar, use_cftime=True)["time"])
     init = [t[0].item() for t in time]
     d0 = convert_time_to_lead(d0.to_dataset(), time_freq="months")[variables[0]]
-        
+
     ds = []
     for v in variables:
         delayed = []
         for y in years:
             delayed.append(
-                dask.array.stack([_open_dcpp_delayed(y, m, v, d0) for m in members], axis=0)
+                dask.array.stack(
+                    [_open_dcpp_delayed(y, m, v, d0) for m in members], axis=0
+                )
             )
         delayed = dask.array.stack(delayed, axis=0)
 
@@ -174,10 +159,11 @@ def _cmip6_dcpp(
     return xr.merge(ds).compute()
 
 
-def extract_HadGEM3_variable(variable, realm, save_as):
+def prepare_HadGEM3_dcpp_variable(variable, realm):
     """
-    Open HadGEM3-GC31-MM dcpp variable from specified monthly realm and save as a zarr collection
-    
+    Open HadGEM3-GC31-MM dcpp variable from specified monthly realm and save
+    as a zarr collection
+
     Parameters
     ----------
     variable : str
@@ -193,43 +179,64 @@ def extract_HadGEM3_variable(variable, realm, save_as):
     members = range(1, 10 + 1)
     version = "v20200???"
     dcppA = _cmip6_dcpp(
-        model, "dcppA-hindcast", variant_id, grid, [variable], realm, hindcast_years, members, version
+        model,
+        "dcppA-hindcast",
+        variant_id,
+        grid,
+        [variable],
+        realm,
+        hindcast_years,
+        members,
+        version,
     )
     dcppB = _cmip6_dcpp(
-        model, "dcppB-forecast", variant_id, grid, [variable], realm, forecast_years, members, version
+        model,
+        "dcppB-forecast",
+        variant_id,
+        grid,
+        [variable],
+        realm,
+        forecast_years,
+        members,
+        version,
     )
     ds = xr.concat([dcppA, dcppB], dim="init")
-    
-    ### Add cell area
+
+    # Add cell area
     if realm == "Omon":
         file = (
             f"{RAW_DATA_DIR}/{model}_piControl/r1i1p1f1/Ofx/areacello/{grid}/v20200108/"
             f"areacello_Ofx_{model}_piControl_r1i1p1f1_{grid}.nc"
         )
+        rename = {"areacello": "area"}
     elif realm == "Amon":
         file = (
             f"{RAW_DATA_DIR}/{model}_piControl/r1i1p1f1/fx/areacella/{grid}/v20200108/"
             f"areacella_fx_{model}_piControl_r1i1p1f1_{grid}.nc"
         )
+        rename = {"areacella": "area"}
     else:
         raise ValueError(f"I don't know where to find the area for realm: {realm}")
-    area = xr.open_dataset(file, chunks={})
+    area = xr.open_dataset(file, chunks={}).rename(rename)
     ds = ds.assign_coords(area)
 
+    save_as = f"{variable}_{realm}_{model}_dcpp"
     chunks = {"init": -1, "member": -1, "lead": -1, "lat": 27, "lon": 36}
     ds.chunk(chunks).to_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr", mode="w")
-    
+
     return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
 
 
-def extract_EC_Earth3_variable(variable, realm, save_as):
+def prepare_EC_Earth3_dcpp_variable(variable, realm):
     """Open EC-Earth3 dcppA-hindcast variable from specified monthly realm"""
+
     def _fix_lat_lon(ds1, ds2):
         """
-        Lat and lon values are not exactly the same to numerical precision 
+        Lat and lon values are not exactly the same to numerical precision
         for different experiments
         """
-        # Lat and lon values are not exactly the same to numerical precision for ds and area
+        # Lat and lon values are not exactly the same to numerical precision
+        # for ds and area
         for c in ["lat", "lon"]:
             if c in ds2.coords:
                 if np.array_equiv(ds2[c].values, ds1[c].values):
@@ -238,37 +245,48 @@ def extract_EC_Earth3_variable(variable, realm, save_as):
                     npt.assert_allclose(ds2[c].values, ds1[c].values, rtol=1e-06)
                     ds1 = ds1.assign_coords({c: ds2[c]})
         return ds1
-        
+
     model = "EC-Earth3"
     variant_id = "i1p1f1"
     grid = "gn" if realm == "Omon" else "gr"
-    hindcast_years = range(1960, 2018 + 1)
-    forecast_years = range(2019, 2020 + 1)
+    years = range(1960, 2018 + 1)
     members = range(1, 10 + 1)
     version = "v2020121?"
     ds = _cmip6_dcpp(
-        model, "dcppA-hindcast", variant_id, grid, [variable], realm, hindcast_years, members, version
+        model,
+        "dcppA-hindcast",
+        variant_id,
+        grid,
+        [variable],
+        realm,
+        years,
+        members,
+        version,
     )
     # dcppB-forecast are on a different longitude grid
 
-    ### Add cell area
+    # Add cell area
     if realm == "Omon":
         file = (
-            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/Ofx/areacello/{grid}/v20200918/"
+            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/"
+            f"Ofx/areacello/{grid}/v20200918/"
             f"areacello_Ofx_{model}_historical_r1{variant_id}_{grid}.nc"
         )
+        rename = {"areacello": "area"}
     elif realm == "Amon":
         file = (
-            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/fx/areacella/{grid}/v20210324/"
+            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/"
+            f"fx/areacella/{grid}/v20210324/"
             f"areacella_fx_{model}_historical_r1{variant_id}_{grid}.nc"
         )
+        rename = {"areacella": "area"}
     else:
         raise ValueError(f"I don't know where to find the area for realm: {realm}")
-    area = xr.open_dataset(file, chunks={})
+    area = xr.open_dataset(file, chunks={}).rename(rename)
     area = _fix_lat_lon(area, ds)
-
     ds = ds.assign_coords(area)
-    
+
+    save_as = f"{variable}_{realm}_{model}_dcpp"
     chunks = {"init": -1, "member": -1, "lead": -1, "lat": 32, "lon": 32}
     ds.chunk(chunks).to_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr", mode="w")
 
@@ -278,9 +296,8 @@ def extract_EC_Earth3_variable(variable, realm, save_as):
 def prepare_HadSLP2r():
     ds = xr.open_dataset(f"{RAW_DATA_DIR}/slp.mnmean.real.nc", use_cftime=True)[["slp"]]
     ds = ds.assign_coords({"area": gridarea_cdo(ds)})
-    
-    return ds
-#     chunks = {"time": -1, "lat": 32, "lon": 32}
-#     ds.chunk(chunks).to_zarr(f"{PROCESSED_DATA_DIR}/HadSLP2r.zarr", mode="w")
 
-#     return xr.open_zarr(f"{PROCESSED_DATA_DIR}/HadSLP2r.zarr")
+    chunks = {"time": -1, "lat": -1, "lon": -1}
+    ds.chunk(chunks).to_zarr(f"{PROCESSED_DATA_DIR}/HadSLP2r.zarr", mode="w")
+
+    return xr.open_zarr(f"{PROCESSED_DATA_DIR}/HadSLP2r.zarr")

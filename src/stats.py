@@ -84,16 +84,14 @@ def mode(ds, dim):
     dim : str
         The dimension along which to compute the mode
     """
+
     def _mode(data):
-        m, _ = scipy.stats.mode(data, axis=-1, nan_policy='omit')
+        m, _ = scipy.stats.mode(data, axis=-1, nan_policy="omit")
         return m.squeeze()
 
     return xr.apply_ufunc(
-        _mode, 
-        ds,
-        input_core_dims=[[dim]],
-        exclude_dims=set([dim]),
-        dask="parallelized")
+        _mode, ds, input_core_dims=[[dim]], exclude_dims=set([dim]), dask="parallelized"
+    )
 
 
 # Metrics
@@ -104,7 +102,8 @@ def get_Type_I_error_rates(
     fcst, obsv, n_times, n_members, metric, method, method_kwargs, alpha=0.05
 ):
     """
-    Returns the Type I error rates for infering a specified metric using a specified method
+    Returns the Type I error rates for infering a specified metric using a
+    specified method
 
     Parameters
     ----------
@@ -125,8 +124,6 @@ def get_Type_I_error_rates(
     alpha : float, optional
         The alpha level to calculate the error rates at
     """
-    import itertools
-
     res = []
     for Nt in n_times:
         res_mem = []
@@ -258,7 +255,7 @@ def blocklength_Wilks(N, N_eff):
 
 
 def _get_pval_from_bootstrap(sample, iterations, null, transform):
-    """ Calculate p-value(s) from bootstrapped iterations """
+    """Calculate p-value(s) from bootstrapped iterations"""
     if transform:
         transform = getattr(sys.modules[__name__], transform)
         null = transform(null)
@@ -270,14 +267,7 @@ def _get_pval_from_bootstrap(sample, iterations, null, transform):
 
 
 def bootstrap_pvalue(
-    a,
-    b,
-    metric,
-    metric_dim,
-    blocks,
-    n_iteration,
-    transform,
-    return_iterations=False
+    a, b, metric, metric_dim, blocks, n_iteration, transform, return_iterations=False
 ):
     """
     Determine the two-tail p-value(s) for a given metric by block-
@@ -304,7 +294,7 @@ def bootstrap_pvalue(
     """
 
     metric = getattr(sys.modules[__name__], metric)
-    
+
     samp = metric(a, b, metric_dim)
     iterations = metric(
         *block_bootstrap(
@@ -319,12 +309,7 @@ def bootstrap_pvalue(
     if return_iterations:
         return samp, iterations
     else:
-        pval = _get_pval_from_bootstrap(
-            samp, 
-            iterations, 
-            null=0, 
-            transform=transform
-        )
+        pval = _get_pval_from_bootstrap(samp, iterations, null=0, transform=transform)
         return samp, pval
 
 

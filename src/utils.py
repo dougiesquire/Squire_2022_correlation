@@ -141,7 +141,7 @@ def extract_subpolar_gyre_region(
     )
 
 
-def calculate_NAO_index(ds):
+def calculate_NAO_index(ds, time_dim="time"):
     """
     Return the North Atlantic Oscillation index used by Smith et al. (2020)
 
@@ -161,7 +161,38 @@ def calculate_NAO_index(ds):
         weighted_average=True,
     )
     nao = Azores_box - Iceland_box
-    return nao - nao.mean("time")
+    return nao - nao.mean(time_dim)
+
+
+def calculate_period_nao_index(ds, period_months):
+    """
+    Given monthly data, return the average North Atlantic Oscillation index
+    used by Smith et al. (2020) over a specified set of consecutive months
+
+    Parameters
+    ----------
+    ds : xarray Dataset or DataArray
+        Array containing sea level pressure data
+    period_months : list of int
+        The set of consecutive months to calculate the NAO index for.
+        E.g. [12, 1, 2, 3] for Boreal Winter index used in Smith et al. (2020)
+    """
+    time_dim = "lead" if "lead" in ds.dims else "time"
+
+    first_full_period_index = (
+        (ds.time.dt.month.compute() == period_months[0]).argmax(time_dim).item(0)
+    )
+    period = (
+        ds.isel({time_dim: slice(first_full_period_index, None)})
+        .time.dt.month.isin(period_months)
+        .compute()
+    )
+    ds_period = (
+        ds.where(period, drop=True)
+        .coarsen({time_dim: len(period_months)}, boundary="trim", coord_func="max")
+        .mean(time_dim)
+    )
+    return calculate_NAO_index(ds_period, time_dim)
 
 
 def calculate_AMV_index(ds):
@@ -187,12 +218,12 @@ def calculate_AMV_index(ds):
     return amv - amv.mean("time")
 
 
-def get_hindcast_mean(hcst, mean_lead_range=[(0,1)]):
+def get_hindcast_mean(hcst, mean_lead_range=[(0, 1)]):
     """
     Given annual hindcasts, return the hindcast over a specified averaging
-    period. Averages are taken over the lead dimension. The time assigned 
+    period. Averages are taken over the lead dimension. The time assigned
     to the output is the time at the last lead in the averaging period
-    
+
     hcst : xarray object
         The annual hindcast data
     mean_lead_range : list of tuple

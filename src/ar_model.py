@@ -324,16 +324,16 @@ def generate_samples_like(
 
     if plot_diagnostics:
         fig = plt.figure(figsize=(12, 14))
-        
+
         alpha = 0.2
         q = (0.05, 0.95)
-        
+
         if "member" in ts.dims:
             ts_m = ts.mean("member")
             ts_r = (ts.quantile(q[0], "member"), ts.quantile(q[1], "member"))
         else:
             ts_m = ts
-            
+
         # Example timeseries
         ax = fig.add_subplot(4, 1, 1)
         n_samp = 3
@@ -345,8 +345,16 @@ def generate_samples_like(
         )
         expl.plot.line(ax=ax, x="time", label=f"AR({order}) model series")
         if "member" in ts.dims:
-            ax.fill_between(range(1,len(ts_m)+1), ts_r[0], ts_r[1], label="_nolabel_", color="k", edgecolor="none", alpha=alpha)
-        ax.plot(range(1,len(ts_m)+1), ts_m, label="Input timeseries", color="k")
+            ax.fill_between(
+                range(1, len(ts_m) + 1),
+                ts_r[0],
+                ts_r[1],
+                label="_nolabel_",
+                color="k",
+                edgecolor="none",
+                alpha=alpha,
+            )
+        ax.plot(range(1, len(ts_m) + 1), ts_m, label="Input timeseries", color="k")
         ax.grid()
         ax.set_xlabel("Time")
         ax.set_title("Example fitted timeseries")
@@ -360,8 +368,19 @@ def generate_samples_like(
         )
         ts_acf = stats.acf(ts, partial=True)
         if "member" in ts_acf.dims:
-            ts_acf_r = (ts_acf.quantile(q[0], "member"), ts_acf.quantile(q[1], "member"))
-            ax.fill_between(ts_acf.lag, ts_acf_r[0], ts_acf_r[1], label="_nolabel_", color="k", edgecolor="none", alpha=alpha)
+            ts_acf_r = (
+                ts_acf.quantile(q[0], "member"),
+                ts_acf.quantile(q[1], "member"),
+            )
+            ax.fill_between(
+                ts_acf.lag,
+                ts_acf_r[0],
+                ts_acf_r[1],
+                label="_nolabel_",
+                color="k",
+                edgecolor="none",
+                alpha=alpha,
+            )
             ts_acf.mean("member").plot(ax=ax, label="Input timeseries", color="k")
         else:
             ts_acf.plot(ax=ax, label="Input timeseries", color="k")
@@ -464,10 +483,14 @@ def generate_samples_like(
                 samples_plot.quantile(0.95, dim="member"),
                 color="C0",
                 edgecolor="none",
-                alpha=0.4
+                alpha=0.4,
             )
-            samples_plot.sel(member=1).plot(color="C0", linestyle="--", label="Simulated member 1")
-            samples_plot.mean("member").plot(color="C0", label="Simulated ensemble mean")
+            samples_plot.sel(member=1).plot(
+                color="C0", linestyle="--", label="Simulated member 1"
+            )
+            samples_plot.mean("member").plot(
+                color="C0", label="Simulated ensemble mean"
+            )
         else:
             samples_plot.plot()
         if "member" in ts.dims:
