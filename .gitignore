@@ -76,7 +76,9 @@ target/
 .ipynb_checkpoints/
 
 # exclude data from source control by default
-data/raw
+data/processed
+data/raw/*
+!data/raw/*.sh
 
 # Mac OS-specific storage files
 .DS_Store
@@ -100,3 +102,4 @@ dask-worker-space/
 
 # zarr files
 *.zarr
+*.nc
