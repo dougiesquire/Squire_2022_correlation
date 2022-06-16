@@ -2,7 +2,7 @@
 
 #PBS -P xv83 
 #PBS -q express
-#PBS -l walltime=04:00:00
+#PBS -l walltime=06:00:00
 #PBS -l mem=192gb
 #PBS -l ncpus=48
 #PBS -l jobfs=400GB
