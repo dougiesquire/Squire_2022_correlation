@@ -177,7 +177,11 @@ def calculate_period_nao_index(ds, period_months):
         The set of consecutive months to calculate the NAO index for.
         E.g. [12, 1, 2, 3] for Boreal Winter index used in Smith et al. (2020)
     """
-    time_dim = "lead" if "lead" in ds.dims else "time"
+    if "lead" in ds.dims:
+        time_dim = "lead"
+        mean_dim = "init"
+    else:
+        time_dim = mean_dim = "time"
 
     first_full_period_index = (
         (ds.time.dt.month.compute() == period_months[0]).argmax(time_dim).item(0)
@@ -192,7 +196,7 @@ def calculate_period_nao_index(ds, period_months):
         .coarsen({time_dim: len(period_months)}, boundary="trim", coord_func="max")
         .mean(time_dim)
     )
-    return calculate_NAO_index(ds_period, time_dim)
+    return calculate_NAO_index(ds_period, mean_dim)
 
 
 def calculate_AMV_index(ds):

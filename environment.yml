@@ -29,11 +29,12 @@ dependencies:
   - brotlipy=0.7.0=py310h5764c6d_1004
   - bzip2=1.0.8=h7f98852_4
   - c-ares=1.18.1=h7f98852_0
-  - ca-certificates=2022.5.18.1=ha878542_0
+  - ca-certificates=2022.6.15=ha878542_0
   - cairo=1.16.0=ha61ee94_1011
   - cartopy=0.20.2=py310hb89acbc_4
   - cdo=2.0.5=h2e6804c_0
-  - certifi=2022.5.18.1=py310hff52083_0
+  - certifi=2022.6.15=py310hff52083_0
+  - cf_xarray=0.7.2=pyhd8ed1ab_0
   - cffi=1.15.0=py310h0fdd8cc_0
   - cftime=1.6.0=py310hde88566_1
   - charset-normalizer=2.0.12=pyhd8ed1ab_0
@@ -58,6 +59,8 @@ dependencies:
   - distributed=2022.5.1=pyhd8ed1ab_0
   - eccodes=2.26.0=hc08acdf_0
   - entrypoints=0.4=pyhd8ed1ab_0
+  - esmf=8.2.0=nompi_h61edca3_0
+  - esmpy=8.2.0=nompi_py310ha0140b2_1
   - executing=0.8.3=pyhd8ed1ab_0
   - expat=2.4.8=h27087fc_0
   - fasteners=0.17.3=pyhd8ed1ab_0
@@ -205,6 +208,7 @@ dependencies:
   - nc-time-axis=1.4.1=pyhd8ed1ab_0
   - ncurses=6.3=h27087fc_1
   - nest-asyncio=1.5.5=pyhd8ed1ab_0
+  - netcdf-fortran=4.5.4=nompi_h2b6e579_100
   - netcdf4=1.5.8=nompi_py310hd7ca5b8_101
   - notebook=6.4.11=pyha770c72_0
   - notebook-shim=0.1.0=pyhd8ed1ab_0
@@ -284,6 +288,7 @@ dependencies:
   - sniffio=1.2.0=py310hff52083_3
   - sortedcontainers=2.4.0=pyhd8ed1ab_0
   - soupsieve=2.3.1=pyhd8ed1ab_0
+  - sparse=0.13.0=pyhd8ed1ab_0
   - sqlite=3.38.5=h4ff8645_0
   - stack_data=0.2.0=pyhd8ed1ab_0
   - statsmodels=0.13.2=py310h96516ba_0
@@ -311,6 +316,7 @@ dependencies:
   - wheel=0.37.1=pyhd8ed1ab_0
   - widgetsnbextension=3.6.0=py310hff52083_0
   - xarray=2022.3.0=pyhd8ed1ab_0
+  - xesmf=0.6.2=pyhd8ed1ab_0
   - xhistogram=0.3.1=pyhd8ed1ab_0
   - xorg-fixesproto=5.0=h7f98852_1002
   - xorg-inputproto=2.3.2=h7f98852_1002

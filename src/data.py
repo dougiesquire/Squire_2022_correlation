@@ -82,6 +82,77 @@ def gridarea_cdo(ds):
     return weights["cell_area"]
 
 
+def interpolate_to_regular_grid(ds, resolution, add_area=True, ignore_degenerate=True):
+    import xesmf
+
+    """
+    Interpolate to a regular grid with a specified resolution using xesmf
+
+    Note, xESMF puts zeros where there is no data to interpolate. Here we
+    add an offset to ensure no zeros, mask zeros, and then remove offset
+    This hack will potentially do funny things for interpolation methods
+    more complicated than bilinear.
+    See https://github.com/JiaweiZhuang/xESMF/issues/15
+
+    Parameters
+    ----------
+    ds : xarray Dataset
+        The data to interpolate
+    resolution : float
+        The longitude and latitude resolution of the grid to interpolate to in degrees
+    add_area : bool, optional
+        If True (default) add a coordinate for the cell areas
+    ignore_degenerate : bool, optional
+        If True ESMF will ignore degenerate cells when carrying out
+        the interpolation
+    """
+    lat_bounds = np.arange(-90, 91, resolution)
+    lon_bounds = np.arange(0, 361, resolution)
+    lats = (lat_bounds[:-1] + lat_bounds[1:]) / 2
+    lons = (lon_bounds[:-1] + lon_bounds[1:]) / 2
+    ds_out = xr.DataArray(
+        data=np.ones((len(lats), len(lons))),
+        coords={
+            "lat": lats,
+            "lon": lons,
+        },
+    ).to_dataset(name="dummy")
+    ds_out["lat"].attrs = {
+        "cartesian_axis": "Y",
+        "long_name": "latitude",
+        "units": "degrees_N",
+    }
+    ds_out["lon"].attrs = {
+        "cartesian_axis": "X",
+        "long_name": "longitude",
+        "units": "degrees_E",
+    }
+
+    C = 1
+    ds_rg = ds.copy() + C
+    regridder = xesmf.Regridder(
+        ds_rg,
+        ds_out,
+        "bilinear",
+        ignore_degenerate=ignore_degenerate,
+    )
+    ds_rg = regridder(ds_rg, keep_attrs=True)
+    ds_rg = ds_rg.where(ds_rg != 0.0) - C
+
+    # Add back in attributes:
+    for v in ds_rg.data_vars:
+        ds_rg[v].attrs = ds[v].attrs
+
+    if add_area:
+        if "area" in ds_out:
+            area = ds_out["area"]
+        else:
+            area = gridarea_cdo(ds_out)
+        return ds_rg.assign_coords({"area": area})
+    else:
+        return ds_rg
+
+
 def _cmip6_dcpp(
     model, experiment, variant_id, grid, variables, realm, years, members, version
 ):
@@ -161,8 +232,8 @@ def _cmip6_dcpp(
 
 def prepare_HadGEM3_dcpp_variable(variable, realm):
     """
-    Open HadGEM3-GC31-MM dcpp variable from specified monthly realm and save
-    as a zarr collection
+    Open HadGEM3-GC31-MM dcpp variable from specified monthly realm, regrid to
+    a 1deg x 1deg regular grid and save as a zarr collection
 
     Parameters
     ----------
@@ -220,15 +291,21 @@ def prepare_HadGEM3_dcpp_variable(variable, realm):
     area = xr.open_dataset(file, chunks={}).rename(rename)
     ds = ds.assign_coords(area)
 
+    # Interpolate to regular grid
+    ds = interpolate_to_regular_grid(ds, resolution=1.0)
+
     save_as = f"{variable}_{realm}_{model}_dcpp"
-    chunks = {"init": -1, "member": -1, "lead": -1, "lat": 27, "lon": 36}
+    chunks = {"init": -1, "member": -1, "lead": -1, "lat": 20, "lon": 20}
     ds.chunk(chunks).to_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr", mode="w")
 
     return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
 
 
 def prepare_EC_Earth3_dcpp_variable(variable, realm):
-    """Open EC-Earth3 dcppA-hindcast variable from specified monthly realm"""
+    """
+    Open EC-Earth3 dcppA-hindcast variable from specified monthly realm, regrid to
+    a 1deg x 1deg regular grid and save as a zarr collection
+    """
 
     def _fix_lat_lon(ds1, ds2):
         """
@@ -286,18 +363,40 @@ def prepare_EC_Earth3_dcpp_variable(variable, realm):
     area = _fix_lat_lon(area, ds)
     ds = ds.assign_coords(area)
 
+    # Interpolate to regular grid
+    ds = interpolate_to_regular_grid(ds, resolution=1.0)
+
     save_as = f"{variable}_{realm}_{model}_dcpp"
-    chunks = {"init": -1, "member": -1, "lead": -1, "lat": 32, "lon": 32}
+    chunks = {"init": -1, "member": -1, "lead": -1, "lat": 20, "lon": 20}
     ds.chunk(chunks).to_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr", mode="w")
 
     return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
 
 
 def prepare_HadSLP2r():
+    """
+    Add a cell area coordinate to the HadSLP2r dataset and save as a zarr collection
+    """
     ds = xr.open_dataset(f"{RAW_DATA_DIR}/slp.mnmean.real.nc", use_cftime=True)[["slp"]]
     ds = ds.assign_coords({"area": gridarea_cdo(ds)})
 
     chunks = {"time": -1, "lat": -1, "lon": -1}
-    ds.chunk(chunks).to_zarr(f"{PROCESSED_DATA_DIR}/HadSLP2r.zarr", mode="w")
+    ds.chunk(chunks).to_zarr(f"{PROCESSED_DATA_DIR}/psl_HadSLP2r.zarr", mode="w")
 
-    return xr.open_zarr(f"{PROCESSED_DATA_DIR}/HadSLP2r.zarr")
+    return xr.open_zarr(f"{PROCESSED_DATA_DIR}/psl_HadSLP2r.zarr")
+
+
+def prepare_HadISST():
+    """
+    Add a cell area coordinate to the HadISST dataset and save as a zarr collection
+    """
+    ds = xr.open_dataset(f"{RAW_DATA_DIR}/HadISST_sst.nc", chunks={}, use_cftime=True)[
+        ["sst"]
+    ]
+    ds = ds.rename({"latitude": "lat", "longitude": "lon"})
+    ds = ds.assign_coords({"area": gridarea_cdo(ds)})
+
+    chunks = {"time": -1, "lat": 90, "lon": 180}
+    ds.chunk(chunks).to_zarr(f"{PROCESSED_DATA_DIR}/tos_HadISST.zarr", mode="w")
+
+    return xr.open_zarr(f"{PROCESSED_DATA_DIR}/tos_HadISST.zarr")

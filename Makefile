@@ -1,4 +1,4 @@
-.PHONY: environment clean lint
+.PHONY: environment data clean lint
 
 #################################################################################
 # GLOBALS                                                                       #
@@ -39,6 +39,14 @@ else
  	@echo ">>> This project uses conda to install the environment. Please install conda"
 endif
 	$(CONDA_ACTIVATE) $(ENV_NAME) ; jupyter kernelspec uninstall -y $(ENV_NAME) ; python -m ipykernel install --user --name $(ENV_NAME) --display-name "Python ($(ENV_NAME))"
+
+## Download/symlink raw data and prepare data from raw data sources
+data:
+	./data/raw/symlink_local_data.sh
+	./data/raw/download_HadISST.sh
+	./data/raw/download_HadSLP2.sh
+	sed -i 's/NCI_PROJECT/$(PROJECT)/g' ./shell/prepare_data.sh
+	qsub ./shell/prepare_data.sh
 
 ## Delete unneeded Python files, dask-worker files and PBS output files
 clean:
