@@ -1,4 +1,4 @@
-""" Functions for preparing data """
+"Functions for preparing data"
 
 import glob
 

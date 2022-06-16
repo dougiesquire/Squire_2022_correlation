@@ -164,7 +164,7 @@ def calculate_NAO_index(ds, time_dim="time"):
     return nao - nao.mean(time_dim)
 
 
-def calculate_period_nao_index(ds, period_months):
+def calculate_period_NAO_index(ds, period_months):
     """
     Given monthly data, return the average North Atlantic Oscillation index
     used by Smith et al. (2020) over a specified set of consecutive months
@@ -199,7 +199,7 @@ def calculate_period_nao_index(ds, period_months):
     return calculate_NAO_index(ds_period, mean_dim)
 
 
-def calculate_AMV_index(ds):
+def calculate_AMV_index(ds, time_dim="time"):
     """
     Return the Atlantic multidecadal variability index used by Smith et al. (2020)
 
@@ -219,7 +219,41 @@ def calculate_AMV_index(ds):
         weighted_average=True,
     )
     amv = NA_box - global_box
-    return amv - amv.mean("time")
+    return amv - amv.mean(time_dim)
+
+
+def coarsen(ds, window_size, dim, start_points=None):
+    """
+    Coarsen data, applying 'max' to all relevant coords and optionally starting
+    at a particular time point in the array
+
+    Parameters
+    ----------
+    ds : xarray Dataset
+        The dataset to coarsen
+    start_points : list
+        Value(s) of coordinate `dim` to start the coarsening from. If these fall
+        outside the range of the coordinate, coarsening starts at the beginning
+        of the array
+    dim : str, optional
+        The name of the dimension to coarsen along
+    """
+    if start_points is None:
+        start_points = [None]
+
+    aux_coords = [c for c in ds.coords if dim in ds[c].dims]
+    dss = []
+    for start_point in start_points:
+        dss.append(
+            ds.sel({dim: slice(start_point, None)})
+            .coarsen(
+                {dim: window_size},
+                boundary="trim",
+                coord_func={d: "max" for d in aux_coords},
+            )
+            .mean()
+        )
+    return xr.concat(dss, dim=dim).sortby(dim)
 
 
 def get_hindcast_mean(hcst, mean_lead_range=[(0, 1)]):

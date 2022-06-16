@@ -1,4 +1,4 @@
-"""CLI for preparing data"""
+"CLI for preparing data"
 
 import logging
 
@@ -17,7 +17,7 @@ def main():
 
     logger.info("Spinning up a dask cluster")
     local_directory = tempfile.TemporaryDirectory()
-    with Client(processes=False, local_directory=local_directory.name) as client:
+    with Client(processes=False, local_directory=local_directory.name):
         logger.info("Preparing HadGEM3 data")
         # _ = data.prepare_HadGEM3_dcpp_variable("psl", "Amon")
         # _ = data.prepare_HadGEM3_dcpp_variable("tos", "Omon")

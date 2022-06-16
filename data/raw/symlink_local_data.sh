@@ -4,8 +4,6 @@ set -e
 
 SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]:-$0}"; )" &> /dev/null && pwd 2> /dev/null; )";
 
-echo ${SCRIPT_DIR}
-
 ln -sfn /g/data/oi10/replicas/CMIP6/DCPP/EC-Earth-Consortium/EC-Earth3/dcppA-hindcast ${SCRIPT_DIR}/EC-Earth3_dcppA-hindcast
 
 ln -sfn /g/data/oi10/replicas/CMIP6/DCPP/EC-Earth-Consortium/EC-Earth3/dcppB-forecast ${SCRIPT_DIR}/EC-Earth3_dcppB-forecast
