@@ -18,16 +18,16 @@ def main():
     logger.info("Spinning up a dask cluster")
     local_directory = tempfile.TemporaryDirectory()
     with Client(processes=False, local_directory=local_directory.name):
-        logger.info("Preparing HadGEM3 data")
+        # logger.info("Preparing HadGEM3 data")
         # _ = data.prepare_HadGEM3_dcpp_variable("psl", "Amon")
         # _ = data.prepare_HadGEM3_dcpp_variable("tos", "Omon")
 
-        logger.info("Preparing EC-Earth3 data")
+        # logger.info("Preparing EC-Earth3 data")
         # _ = data.prepare_EC_Earth3_dcpp_variable("psl", "Amon")
-        _ = data.prepare_EC_Earth3_dcpp_variable("tos", "Omon")
+        # _ = data.prepare_EC_Earth3_dcpp_variable("tos", "Omon")
 
-        logger.info("Preparing HadSLP2r data")
-        _ = data.prepare_HadSLP2r()
+        # logger.info("Preparing HadSLP2r data")
+        # _ = data.prepare_HadSLP2r()
 
         logger.info("Preparing HadISST data")
         _ = data.prepare_HadISST()

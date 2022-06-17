@@ -395,6 +395,9 @@ def prepare_HadISST():
     ]
     ds = ds.rename({"latitude": "lat", "longitude": "lon"})
     ds = ds.assign_coords({"area": gridarea_cdo(ds)})
+    
+    # Mask sea ice
+    ds = ds.where(ds > -1000)
 
     chunks = {"time": -1, "lat": 90, "lon": 180}
     ds.chunk(chunks).to_zarr(f"{PROCESSED_DATA_DIR}/tos_HadISST.zarr", mode="w")

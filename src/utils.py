@@ -164,6 +164,28 @@ def calculate_NAO_index(ds, time_dim="time"):
     return nao - nao.mean(time_dim)
 
 
+def _get_consecutive_month_avg(ds, months, time_dim):
+    """
+    Return the average over a set of consecutive months
+    
+    Parameters
+    ----------
+    ds : xarray Dataset or DataArray
+        The data to average
+    months : list of int
+        The set of consecutive months to average. E.g. [12, 1, 2, 3] for
+        Boreal Winter period used in Smith et al. (2020)
+    """
+    first_full_period_index = (
+        (ds.time.dt.month.compute() == months[0]).argmax(time_dim).item(0)
+    )
+    period = (
+        ds.isel({time_dim: slice(first_full_period_index, None)})
+        .time.dt.month.isin(months)
+        .compute()
+    )
+    return coarsen(ds.where(period, drop=True), len(months), time_dim)
+
 def calculate_period_NAO_index(ds, period_months):
     """
     Given monthly data, return the average North Atlantic Oscillation index
@@ -183,19 +205,8 @@ def calculate_period_NAO_index(ds, period_months):
     else:
         time_dim = mean_dim = "time"
 
-    first_full_period_index = (
-        (ds.time.dt.month.compute() == period_months[0]).argmax(time_dim).item(0)
-    )
-    period = (
-        ds.isel({time_dim: slice(first_full_period_index, None)})
-        .time.dt.month.isin(period_months)
-        .compute()
-    )
-    ds_period = (
-        ds.where(period, drop=True)
-        .coarsen({time_dim: len(period_months)}, boundary="trim", coord_func="max")
-        .mean(time_dim)
-    )
+    ds_period = _get_consecutive_month_avg(ds, period_months, time_dim)
+    
     return calculate_NAO_index(ds_period, mean_dim)
 
 
@@ -220,6 +231,31 @@ def calculate_AMV_index(ds, time_dim="time"):
     )
     amv = NA_box - global_box
     return amv - amv.mean(time_dim)
+
+
+def calculate_period_AMV_index(ds, period_months):
+    """
+    Given monthly data, return the average Atlantic multidecadal variability
+    index used by Smith et al. (2020) over a specified set of consecutive
+    months
+
+    Parameters
+    ----------
+    ds : xarray Dataset or DataArray
+        Array containing sea level pressure data
+    period_months : list of int
+        The set of consecutive months to calculate the NAO index for.
+        E.g. [12, 1, 2, 3] for Boreal Winter index used in Smith et al. (2020)
+    """
+    if "lead" in ds.dims:
+        time_dim = "lead"
+        mean_dim = "init"
+    else:
+        time_dim = mean_dim = "time"
+
+    ds_period = _get_consecutive_month_avg(ds, period_months, time_dim)
+
+    return calculate_AMV_index(ds_period, mean_dim)
 
 
 def coarsen(ds, window_size, dim, start_points=None):
