@@ -82,7 +82,8 @@ def fit(
         res = ar_select_order(data, maxlag, **kwargs).model.fit()
         params = np.empty(maxlag + 1)
         params[:] = np.nan
-        params[: len(res.params)] = res.params
+        if res.ar_lags is not None:
+            params[[l - 1 for l in res.ar_lags]] = res.params
         params[-1] = np.sqrt(res.sigma2)
         return params
 
@@ -128,7 +129,8 @@ def generate_samples(
     params, scale, n_times, n_samples, n_members=None, rolling_means=None
 ):
     """
-    Generate random samples from an AR process
+    Generate random samples from an AR process. Note, the lags of the 
+    AR params must be consecutive.
 
     Parameters
     ----------
