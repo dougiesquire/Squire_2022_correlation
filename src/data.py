@@ -423,13 +423,13 @@ def prepare_CanESM5_dcpp_variable(variable, realm):
     ### Add cell area
     if realm == "Omon":
         file = (
-            f"{DATA_DIR}/{model}_historical/r1{variant_id}/Ofx/areacello/{grid}/{version}/"
+            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/Ofx/areacello/{grid}/{version}/"
             f"areacello_Ofx_{model}_historical_r1{variant_id}_{grid}.nc"
         )
         rename = {"areacello": "area"}
     elif realm == "Amon":
         file = (
-            f"{DATA_DIR}/{model}_historical/r1{variant_id}/fx/areacella/{grid}/{version}/"
+            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/fx/areacella/{grid}/{version}/"
             f"areacella_fx_{model}_historical_r1{variant_id}_{grid}.nc"
         )
         rename = {"areacella": "area"}
