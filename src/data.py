@@ -389,8 +389,12 @@ def prepare_CanESM5_dcpp_variable(variable, realm):
     variant_id = "i1p2f1"
     grid = "gn"
     hindcast_years = range(1960, 2019 + 1)
-    forecast_years = range(2020, 2021 + 1)
-    members = range(1, 40 + 1)
+     # Some of 2021 is available but some missing (e.g s2021-r34i1p2f1/Omon)
+    forecast_years = range(2020, 2020 + 1)
+    if variable == "psl":
+        members = range(1, 20 + 1) # Only 20 psl members available for 1960 - 2016
+    else:
+        members = range(1, 40 + 1)
     version = "v20190429"
     dcppA = _cmip6_dcpp(
         model,
