@@ -26,10 +26,14 @@ def main():
         # _ = data.prepare_EC_Earth3_dcpp_variable("psl", "Amon")
         # _ = data.prepare_EC_Earth3_dcpp_variable("tos", "Omon")
         
-        logger.info("Preparing CanESM5 data")
-        _ = data.prepare_CanESM5_dcpp_variable("psl", "Amon")
-        _ = data.prepare_CanESM5_dcpp_variable("tos", "Omon")
+        # logger.info("Preparing CanESM5 data")
+        # _ = data.prepare_CanESM5_dcpp_variable("psl", "Amon")
+        # _ = data.prepare_CanESM5_dcpp_variable("tos", "Omon")
 
+        logger.info("Preparing CESM1.1 data")
+        prepare_CESM1_1_CAM5_CMIP5_dcpp_variable("psl", "Amon")
+        prepare_CESM1_1_CAM5_CMIP5_dcpp_variable("tos", "Omon")
+    
         # logger.info("Preparing HadSLP2r data")
         # _ = data.prepare_HadSLP2r()
 

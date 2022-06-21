@@ -466,7 +466,7 @@ def prepare_CESM1_1_CAM5_CMIP5_dcpp_variable(variable, realm):
     hindcast_years = range(1960, 2017 + 1)
      # Some of 2021 is available but some missing (e.g s2021-r34i1p2f1/Omon)
     members = range(1, 40 + 1)
-    version = "v20191007"
+    version = "v201910??"
     ds = _cmip6_dcpp(
         model,
         "dcppA-hindcast",
