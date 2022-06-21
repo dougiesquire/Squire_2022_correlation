@@ -419,6 +419,7 @@ def prepare_CanESM5_dcpp_variable(variable, realm):
         version,
     )
     ds = xr.concat([dcppA, dcppB], dim="init")
+    print(ds)
     
     ### Add cell area
     if realm == "Omon":
@@ -437,6 +438,7 @@ def prepare_CanESM5_dcpp_variable(variable, realm):
         raise ValueError(f"I don't know where to find the area for realm: {realm}")
     area = xr.open_dataset(file, chunks={}).rename(rename)
     ds = ds.assign_coords(area)
+    print(ds)
 
     # Interpolate to regular grid
     ds = interpolate_to_regular_grid(ds, resolution=1.0)
@@ -482,13 +484,13 @@ def prepare_CESM1_1_CAM5_CMIP5_dcpp_variable(variable, realm):
     ### Add cell area
     if realm == "Omon":
         file = (
-            f"{DATA_DIR}/CESM2_historical/r1{variant_id}/Ofx/areacello/{grid}/v20190308/"
+            f"{RAW_DATA_DIR}/CESM2_historical/r1{variant_id}/Ofx/areacello/{grid}/v20190308/"
             f"areacello_Ofx_CESM2_historical_r1{variant_id}_{grid}.nc"
         )
         rename = {"areacello": "area"}
     elif realm == "Amon":
         file = (
-            f"{DATA_DIR}/CESM2_historical/r1{variant_id}/fx/areacella/{grid}/v20190308/"
+            f"{RAW_DATA_DIR}/CESM2_historical/r1{variant_id}/fx/areacella/{grid}/v20190308/"
             f"areacella_fx_CESM2_historical_r1{variant_id}_{grid}.nc"
         )
         rename = {"areacella": "area"}
@@ -496,6 +498,175 @@ def prepare_CESM1_1_CAM5_CMIP5_dcpp_variable(variable, realm):
         raise ValueError(f"I don't know where to find the area for realm: {realm}")
     area = xr.open_dataset(file, chunks={}).rename(rename)
     ds = ds.assign_coords(area)
+
+    # Interpolate to regular grid
+    ds = interpolate_to_regular_grid(ds, resolution=1.0)
+
+    save_as = f"{variable}_{realm}_{model}_dcpp"
+    chunks = {"init": -1, "member": -1, "lead": -1, "lat": 20, "lon": 20}
+    ds.chunk(chunks).to_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr", mode="w")
+
+    return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
+
+
+def prepare_MIROC6_dcpp_variable(variable, realm):
+    """
+    Open MIROC6 dcpp variable from specified monthly realm, regrid to
+    a 1deg x 1deg regular grid and save as a zarr collection
+
+    Parameters
+    ----------
+    variable : str
+        The name of the variable to extract
+    realm : str
+        The name of the realm containing the variable
+    """
+    model = "MIROC6"
+    variant_id = "i1p1f1"
+    grid = "gn"
+    hindcast_years = range(1960, 2021 + 1)
+    members = range(1, 10 + 1)
+    version = "v20??????"
+    ds = _cmip6_dcpp(
+        model,
+        "dcppA-hindcast",
+        variant_id,
+        grid,
+        [variable],
+        realm,
+        hindcast_years,
+        members,
+        version,
+    )
+    
+    ### Add cell area
+    if realm == "Omon":
+        file = (
+            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/Ofx/areacello/{grid}/v20190311/"
+            f"areacello_Ofx_{model}_historical_r1{variant_id}_{grid}.nc"
+        )
+        rename = {"areacello": "area"}
+    elif realm == "Amon":
+        file = (
+            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/fx/areacella/{grid}/v20190311/"
+            f"areacella_fx_{model}_historical_r1{variant_id}_{grid}.nc"
+        )
+        rename = {"areacella": "area"}
+    else:
+        raise ValueError(f"I don't know where to find the area for realm: {realm}")
+    area = xr.open_dataset(file, chunks={}).rename(rename)
+    ds = ds.assign_coords(area)
+
+    # Interpolate to regular grid
+    ds = interpolate_to_regular_grid(ds, resolution=1.0)
+
+    save_as = f"{variable}_{realm}_{model}_dcpp"
+    chunks = {"init": -1, "member": -1, "lead": -1, "lat": 20, "lon": 20}
+    ds.chunk(chunks).to_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr", mode="w")
+
+    return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
+
+
+def prepare_MPI_ESM1_2_HR_dcpp_variable(variable, realm):
+    """
+    Open MPI-ESM1.2-HR dcpp variable from specified monthly realm, regrid to
+    a 1deg x 1deg regular grid and save as a zarr collection
+
+    Parameters
+    ----------
+    variable : str
+        The name of the variable to extract
+    realm : str
+        The name of the realm containing the variable
+    """
+    model = "MPI-ESM1-2-HR"
+    variant_id = "i1p1f1"
+    grid = "gn"
+    hindcast_years = range(1960, 2018 + 1)
+    members = range(1, 10 + 1)
+    version = "v20??????"
+    ds = _cmip6_dcpp(
+        model,
+        "dcppA-hindcast",
+        variant_id,
+        grid,
+        [variable],
+        realm,
+        hindcast_years,
+        members,
+        version,
+    )
+    
+    ### Add cell area
+    if realm == "Omon":
+        file = (
+            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/Ofx/areacello/{grid}/v20190710/"
+            f"areacello_Ofx_{model}_historical_r1{variant_id}_{grid}.nc"
+        )
+        rename = {"areacello": "area"}
+    elif realm == "Amon":
+        file = (
+            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/fx/areacella/{grid}/v20190710/"
+            f"areacella_fx_{model}_historical_r1{variant_id}_{grid}.nc"
+        )
+        rename = {"areacella": "area"}
+    else:
+        raise ValueError(f"I don't know where to find the area for realm: {realm}")
+    area = xr.open_dataset(file, chunks={}).rename(rename)
+    ds = ds.assign_coords(area)
+
+    # Interpolate to regular grid
+    ds = interpolate_to_regular_grid(ds, resolution=1.0)
+
+    save_as = f"{variable}_{realm}_{model}_dcpp"
+    chunks = {"init": -1, "member": -1, "lead": -1, "lat": 20, "lon": 20}
+    ds.chunk(chunks).to_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr", mode="w")
+
+    return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
+
+
+def prepare_IPSL_CM6A_LR_dcpp_variable(variable, realm):
+    """
+    Open IPSL-CM6A-LR dcpp variable from specified monthly realm, regrid to
+    a 1deg x 1deg regular grid and save as a zarr collection
+
+    Parameters
+    ----------
+    variable : str
+        The name of the variable to extract
+    realm : str
+        The name of the realm containing the variable
+    """
+    model = "IPSL-CM6A-LR"
+    variant_id = "i1p1f1"
+    grid = "gn" if realm == "Omon" else "gr"
+    hindcast_years = range(1960, 2016 + 1)
+    members = range(1, 10 + 1)
+    version = "v20200108"
+    ds = _cmip6_dcpp(
+        model,
+        "dcppA-hindcast",
+        variant_id,
+        grid,
+        [variable],
+        realm,
+        hindcast_years,
+        members,
+        version,
+    )
+    
+    ### Add cell area (already present for Omon)
+    if realm == "Amon":
+        file = (
+            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/fx/areacella/{grid}/v20180803/"
+            f"areacella_fx_{model}_historical_r1{variant_id}_{grid}.nc"
+        )
+        rename = {"areacella": "area"}
+        
+        area = xr.open_dataset(file, chunks={}).rename(rename)
+        ds = ds.assign_coords(area)
+    elif realm != "Omon":
+        raise ValueError(f"I don't know where to find the area for realm: {realm}")
 
     # Interpolate to regular grid
     ds = interpolate_to_regular_grid(ds, resolution=1.0)

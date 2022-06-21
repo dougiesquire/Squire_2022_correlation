@@ -28,11 +28,22 @@ def main():
         
         # logger.info("Preparing CanESM5 data")
         # _ = data.prepare_CanESM5_dcpp_variable("psl", "Amon")
-        # _ = data.prepare_CanESM5_dcpp_variable("tos", "Omon")
+        ## _ = data.prepare_CanESM5_dcpp_variable("tos", "Omon") # runs out of memory
 
-        logger.info("Preparing CESM1.1 data")
-        prepare_CESM1_1_CAM5_CMIP5_dcpp_variable("psl", "Amon")
-        prepare_CESM1_1_CAM5_CMIP5_dcpp_variable("tos", "Omon")
+        # logger.info("Preparing CESM1.1 data")
+        # _ = data.prepare_CESM1_1_CAM5_CMIP5_dcpp_variable("psl", "Amon")
+        # _ = data.prepare_CESM1_1_CAM5_CMIP5_dcpp_variable("tos", "Omon")
+        
+        # logger.info("Preparing MIROC6 data")
+        # _ = data.prepare_MIROC6_dcpp_variable("psl", "Amon")
+        # _ = data.prepare_MIROC6_dcpp_variable("tos", "Omon")
+        
+        # logger.info("Preparing MPI-ESM1.2-HR data")
+        # _ = data.prepare_MPI_ESM1_2_HR_dcpp_variable("psl", "Amon")
+        
+        logger.info("Preparing IPSL-CM6A-LR data")
+        # _ = data.prepare_IPSL_CM6A_LR_dcpp_variable("psl", "Amon")
+        _ = data.prepare_IPSL_CM6A_LR_dcpp_variable("tos", "Omon")
     
         # logger.info("Preparing HadSLP2r data")
         # _ = data.prepare_HadSLP2r()

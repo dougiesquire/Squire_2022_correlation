@@ -24,4 +24,16 @@ ln -sfn /g/data/oi10/replicas/CMIP6/CMIP/CCCma/CanESM5/historical ${SCRIPT_DIR}/
 
 ln -sfn /g/data/oi10/replicas/CMIP6/DCPP/NCAR/CESM1-1-CAM5-CMIP5/dcppA-hindcast/ ${SCRIPT_DIR}/CESM1-1-CAM5-CMIP5_dcppA-hindcast
 
-ln -sfn /g/data/oi10/replicas/CMIP6/CMIP/NCAR/CESM2/historical ${SCRIPT_DIR}/CESM2_historical
+ln -sfn /g/data/oi10/replicas/CMIP6/CMIP/NCAR/CESM2/historical/ ${SCRIPT_DIR}/CESM2_historical
+
+ln -sfn /g/data/oi10/replicas/CMIP6/DCPP/MIROC/MIROC6/dcppA-hindcast/ ${SCRIPT_DIR}/MIROC6_dcppA-hindcast
+
+ln -sfn /g/data/oi10/replicas/CMIP6/CMIP/MIROC/MIROC6/historical/ ${SCRIPT_DIR}/MIROC6_historical
+
+ln -sfn /g/data/oi10/replicas/CMIP6/DCPP/MPI-M/MPI-ESM1-2-HR/dcppA-hindcast ${SCRIPT_DIR}/MPI-ESM1-2-HR_dcppA-hindcast
+
+ln -sfn /g/data/oi10/replicas/CMIP6/CMIP/MPI-M/MPI-ESM1-2-HR/historical ${SCRIPT_DIR}/MPI-ESM1-2-HR_historical
+
+ln -sfn /g/data/oi10/replicas/CMIP6/DCPP/IPSL/IPSL-CM6A-LR/dcppA-hindcast ${SCRIPT_DIR}/IPSL-CM6A-LR_dcppA-hindcast
+
+ln -sfn /g/data/oi10/replicas/CMIP6/CMIP/IPSL/IPSL-CM6A-LR/historical ${SCRIPT_DIR}/IPSL-CM6A-LR_historical
