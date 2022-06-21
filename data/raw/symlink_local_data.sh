@@ -15,3 +15,9 @@ ln -sfn /g/data/oi10/replicas/CMIP6/DCPP/MOHC/HadGEM3-GC31-MM/dcppA-hindcast/ ${
 ln -sfn /g/data/oi10/replicas/CMIP6/DCPP/MOHC/HadGEM3-GC31-MM/dcppB-forecast/ ${SCRIPT_DIR}/HadGEM3-GC31-MM_dcppB-forecast
 
 ln -sfn /g/data/oi10/replicas/CMIP6/CMIP/MOHC/HadGEM3-GC31-MM/piControl ${SCRIPT_DIR}/HadGEM3-GC31-MM_piControl
+
+ln -sfn /g/data/oi10/replicas/CMIP6/DCPP/CCCma/CanESM5/dcppA-hindcast/ ${SCRIPT_DIR}/CanESM5_dcppA-hindcast
+
+ln -sfn /g/data/oi10/replicas/CMIP6/DCPP/CCCma/CanESM5/dcppB-forecast/ ${SCRIPT_DIR}/CanESM5_dcppB-forecast
+
+ln -sfn /g/data/oi10/replicas/CMIP6/CMIP/CCCma/CanESM5/historical ${SCRIPT_DIR}/CanESM5_historical
