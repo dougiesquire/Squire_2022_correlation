@@ -21,3 +21,7 @@ ln -sfn /g/data/oi10/replicas/CMIP6/DCPP/CCCma/CanESM5/dcppA-hindcast/ ${SCRIPT_
 ln -sfn /g/data/oi10/replicas/CMIP6/DCPP/CCCma/CanESM5/dcppB-forecast/ ${SCRIPT_DIR}/CanESM5_dcppB-forecast
 
 ln -sfn /g/data/oi10/replicas/CMIP6/CMIP/CCCma/CanESM5/historical ${SCRIPT_DIR}/CanESM5_historical
+
+ln -sfn /g/data/oi10/replicas/CMIP6/DCPP/NCAR/CESM1-1-CAM5-CMIP5/dcppA-hindcast/ ${SCRIPT_DIR}/CESM1-1-CAM5-CMIP5_dcppA-hindcast
+
+ln -sfn /g/data/oi10/replicas/CMIP6/CMIP/NCAR/CESM2/historical ${SCRIPT_DIR}/CESM2_historical
