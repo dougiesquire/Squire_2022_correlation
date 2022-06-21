@@ -25,12 +25,16 @@ def main():
         # logger.info("Preparing EC-Earth3 data")
         # _ = data.prepare_EC_Earth3_dcpp_variable("psl", "Amon")
         # _ = data.prepare_EC_Earth3_dcpp_variable("tos", "Omon")
+        
+        logger.info("Preparing CanESM5 data")
+        _ = data.prepare_CanESM5_dcpp_variable("psl", "Amon")
+        _ = data.prepare_CanESM5_dcpp_variable("tos", "Omon")
 
         # logger.info("Preparing HadSLP2r data")
         # _ = data.prepare_HadSLP2r()
 
-        logger.info("Preparing HadISST data")
-        _ = data.prepare_HadISST()
+        # logger.info("Preparing HadISST data")
+        # _ = data.prepare_HadISST()
 
 
 if __name__ == "__main__":

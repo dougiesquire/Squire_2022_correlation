@@ -166,19 +166,24 @@ def acf(*objects, headings, partial=False, panel_dim="rolling_mean", nlags=20):
     """
     assert len(objects) == len(headings)
     nrows = objects[0].sizes[panel_dim]
+    ncols = 2 if any(["member" in ds.dims for ds in objects]) else 1
 
-    fig = plt.figure(figsize=(14, 5 * nrows))
-    axs = fig.subplots(nrows, 1, sharex=True)
+    fig = plt.figure(figsize=(14, 4 * nrows))
+    axs = fig.subplots(nrows, ncols, sharex=True, sharey=True)
+    if ncols == 1:
+        axs = np.reshape(axs, (nrows, 1))
+
     alpha = 0.3
     quantiles = (0.05, 0.95)
 
-    linecycler = cycle(["-", "--", "-.", ":"])
+    ACF_str = "pACF" if partial else "ACF"
+
+    colorcycler = cycle([f"C{i}" for i in range(10)])
     for heading, obj in zip(headings, objects):
-        line = next(linecycler)
+        color = next(colorcycler)
         for idx, val in enumerate(obj[panel_dim].values):
-            colorcycler = cycle([f"C{i}" for i in range(10)])
-            color = next(colorcycler)
             if "member" in obj.dims:
+                # Plot the mean acf per ensemble in one panel
                 p = stats.acf(
                     obj.sel({panel_dim: val}).dropna("time"),
                     partial=partial,
@@ -191,7 +196,7 @@ def acf(*objects, headings, partial=False, panel_dim="rolling_mean", nlags=20):
                         p.mean("member").quantile(quantiles[1], "sample"),
                     )
 
-                    axs[idx].fill_between(
+                    axs[idx, 0].fill_between(
                         p.lag,
                         pr[0],
                         pr[1],
@@ -203,15 +208,18 @@ def acf(*objects, headings, partial=False, panel_dim="rolling_mean", nlags=20):
                 else:
                     pm = p.mean("member")
 
-                axs[idx].plot(
+                axs[idx, 0].plot(
                     p.lag,
                     pm,
                     color=color,
-                    linestyle=line,
-                    label=f"{heading}: mean ACF per ensemble",
+                    label=f"{heading}",
                 )
+                axs[idx, 0].set_title(
+                    f"Mean {ACF_str} per ensemble, {panel_dim} = {val}"
+                )
+                axs[idx, 0].set_ylabel("pACF" if partial else "ACF")
 
-                color = next(colorcycler)
+                # Plot the ensemble mean acf in the other panel
                 p = stats.acf(
                     obj.sel({panel_dim: val}).dropna("time").mean("member"),
                     partial=partial,
@@ -223,11 +231,8 @@ def acf(*objects, headings, partial=False, panel_dim="rolling_mean", nlags=20):
                         p.quantile(quantiles[0], "sample"),
                         p.quantile(quantiles[1], "sample"),
                     )
-                else:
-                    pm = p
-                    pr = None
-                if pr is not None:
-                    axs[idx].fill_between(
+
+                    axs[idx, 1].fill_between(
                         p.lag,
                         pr[0],
                         pr[1],
@@ -236,13 +241,18 @@ def acf(*objects, headings, partial=False, panel_dim="rolling_mean", nlags=20):
                         alpha=alpha,
                         label="_nolabel_",
                     )
-                axs[idx].plot(
+                else:
+                    pm = p
+
+                axs[idx, 1].plot(
                     p.lag,
                     pm,
                     color=color,
-                    linestyle=line,
-                    label=f"{heading}: ensemble mean ACF",
+                    label=f"{heading}",
                 )
+                axs[idx, 1].set_title(f"Ensemble mean {ACF_str}, {panel_dim} = {val}")
+                axs[idx, 1].grid(True)
+
             else:
                 p = stats.acf(
                     obj.sel({panel_dim: val}).dropna("time"),
@@ -256,11 +266,8 @@ def acf(*objects, headings, partial=False, panel_dim="rolling_mean", nlags=20):
                         p.quantile(quantiles[0], "sample"),
                         p.quantile(quantiles[1], "sample"),
                     )
-                else:
-                    pm = p
-                    pr = None
-                if pr is not None:
-                    axs[idx].fill_between(
+
+                    axs[idx, 0].fill_between(
                         p.lag,
                         pr[0],
                         pr[1],
@@ -269,15 +276,19 @@ def acf(*objects, headings, partial=False, panel_dim="rolling_mean", nlags=20):
                         alpha=alpha,
                         label="_nolabel_",
                     )
-                axs[idx].plot(
+                else:
+                    pm = p
+
+                axs[idx, 0].plot(
                     p.lag,
                     pm,
                     color=color,
-                    linestyle=line,
                     label=f"{heading}",
                 )
 
-            axs[idx].grid(True)
-            axs[idx].set_title(f"{panel_dim} = {val}")
+            axs[idx, 0].set_ylabel(ACF_str)
+            axs[idx, 0].grid(True)
 
-    axs[0].legend()
+    axs[0, 0].legend()
+
+    fig.tight_layout()

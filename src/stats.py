@@ -99,11 +99,19 @@ def mode(ds, dim):
 
 
 def get_Type_I_error_rates(
-    fcst, obsv, n_times, n_members, metric, method, method_kwargs, alpha=0.05
+    fcst,
+    obsv,
+    n_times,
+    n_members,
+    metric,
+    method,
+    method_kwargs,
+    alpha=0.05,
+    sample_blocks=None,
 ):
     """
-    Returns the Type I error rates for infering a specified metric using a
-    specified method
+    Returns the Type I error rates and true critical values for infering a
+    specified metric using a specified method with a specified alpha
 
     Parameters
     ----------
@@ -123,21 +131,54 @@ def get_Type_I_error_rates(
         kwargs to pass to method
     alpha : float, optional
         The alpha level to calculate the error rates at
+    sample_blocks: int, optional
+        If not None, loop over the sample dimension in blocks of this size.
+        Helps to reduce memory footprint
+
+    Returns
+    -------
+    Type_1_errors : xarray object
+        The Type 1 error rates at alpha
+    crit: xarray object
+        The Type 1 error rates at alpha
     """
-    res = []
+    N_samples = fcst.sizes["sample"]
+    if sample_blocks is None:
+        sample_blocks = N_samples
+
+    block_starts = list(range(0, N_samples, sample_blocks))
+    block_ends = block_starts[1:] + [N_samples]
+    pvals = []
+    crits = []
     for Nt in n_times:
-        res_mem = []
+        pvals_mem = []
+        crits_mem = []
         for Nm in n_members:
-            _, pval = infer_metric(
-                fcst.sel(time=slice(0, Nt), member=slice(0, Nm)),
-                obsv.sel(time=slice(0, Nt)),
-                metric=metric,
-                method=method,
-                method_kwargs=method_kwargs,
-            )
-            res_mem.append(pval.assign_coords({"n_members": Nm, "n_times": Nt}))
-        res.append(xr.concat(res_mem, dim="n_members"))
-    return (xr.concat(res, dim="n_times") < alpha).mean("sample")
+            print(f"Processing Nt={Nt}, Nm={Nm}")
+            pvals_block = []
+            crits_block = []
+            for block_start, block_end in zip(block_starts, block_ends):
+                v, pval = infer_metric(
+                    fcst.isel(sample=slice(block_start, block_end),
+                        time=slice(0, Nt),
+                        member=slice(0, Nm),
+                    ),
+                    obsv.isel(sample=slice(block_start, block_end),
+                        time=slice(0, Nt)
+                    ),
+                    metric=metric,
+                    method=method,
+                    method_kwargs=method_kwargs,
+                )
+                crits_block.append(v.assign_coords({"n_members": Nm, "n_times": Nt}))
+                pvals_block.append(pval.assign_coords({"n_members": Nm, "n_times": Nt}))
+            crits_mem.append(xr.concat(crits_block, dim="sample"))
+            pvals_mem.append(xr.concat(pvals_block, dim="sample"))
+        crits.append(xr.concat(crits_mem, dim="n_members"))
+        pvals.append(xr.concat(pvals_mem, dim="n_members"))
+    return (xr.concat(pvals, dim="n_times") < alpha).mean("sample"), xr.concat(
+        crits, dim="n_times"
+    ).quantile(q=1 - alpha / 2, dim="sample")
 
 
 def infer_metric(a, b, metric, method, method_kwargs=None, dim="time"):
@@ -256,7 +297,7 @@ def blocklength_Wilks(N, N_eff):
 
 def _get_pval_from_bootstrap(sample, iterations, null, transform):
     """Calculate p-value(s) from bootstrapped iterations"""
-    if transform:
+    if transform is not None:
         transform = getattr(sys.modules[__name__], transform)
         null = transform(null)
         iterations = transform(iterations)

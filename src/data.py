@@ -373,6 +373,77 @@ def prepare_EC_Earth3_dcpp_variable(variable, realm):
     return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
 
 
+def prepare_CanESM5_dcpp_variable(variable, realm):
+    """
+    Open CanESM5 dcpp variable from specified monthly realm, regrid to
+    a 1deg x 1deg regular grid and save as a zarr collection
+
+    Parameters
+    ----------
+    variable : str
+        The name of the variable to extract
+    realm : str
+        The name of the realm containing the variable
+    """
+    model = "CanESM5"
+    variant_id = "i1p2f1"
+    grid = "gn"
+    hindcast_years = range(1960, 2019 + 1)
+    forecast_years = range(2020, 2021 + 1)
+    members = range(1, 40 + 1)
+    version = "v20190429"
+    dcppA = _cmip6_dcpp(
+        model,
+        "dcppA-hindcast",
+        variant_id,
+        grid,
+        [variable],
+        realm,
+        hindcast_years,
+        members,
+        version,
+    )
+    dcppB = _cmip6_dcpp(
+        model,
+        "dcppB-forecast",
+        variant_id,
+        grid,
+        [variable],
+        realm,
+        forecast_years,
+        members,
+        version,
+    )
+    ds = xr.concat([dcppA, dcppB], dim="init")
+    
+    ### Add cell area
+    if realm == "Omon":
+        file = (
+            f"{DATA_DIR}/{model}_historical/r1{variant_id}/Ofx/areacello/{grid}/{version}/"
+            f"areacello_Ofx_{model}_historical_r1{variant_id}_{grid}.nc"
+        )
+        rename = {"areacello": "area"}
+    elif realm == "Amon":
+        file = (
+            f"{DATA_DIR}/{model}_historical/r1{variant_id}/fx/areacella/{grid}/{version}/"
+            f"areacella_fx_{model}_historical_r1{variant_id}_{grid}.nc"
+        )
+        rename = {"areacella": "area"}
+    else:
+        raise ValueError(f"I don't know where to find the area for realm: {realm}")
+    area = xr.open_dataset(file, chunks={}).rename(rename)
+    ds = ds.assign_coords(area)
+
+    # Interpolate to regular grid
+    ds = interpolate_to_regular_grid(ds, resolution=1.0)
+
+    save_as = f"{variable}_{realm}_{model}_dcpp"
+    chunks = {"init": -1, "member": -1, "lead": -1, "lat": 20, "lon": 20}
+    ds.chunk(chunks).to_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr", mode="w")
+
+    return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
+
+
 def prepare_HadSLP2r():
     """
     Add a cell area coordinate to the HadSLP2r dataset and save as a zarr collection

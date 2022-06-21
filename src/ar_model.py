@@ -163,7 +163,7 @@ def generate_samples(
     process = ArmaProcess(np.concatenate(([1], -params)))
     s = process.generate_sample(
         nsample=(n_times + extend, n_samples), scale=scale, axis=0
-    )
+    ).astype("float32")
 
     if n_members is None:
         s = xr.DataArray(
@@ -247,7 +247,7 @@ def predict(params, inits, n_steps, n_members=1, scale=None):
     inits_stacked = sliding_window_view(inits, window_shape=order, axis=0)
 
     # res = [member, init, sample, lead]
-    res = np.empty((n_members, *inits_stacked.shape[:-1], n_steps + order))
+    res = np.empty((n_members, *inits_stacked.shape[:-1], n_steps + order), dtype="float32")
     res[:, :, :, :order] = inits_stacked
     for step in range(order, n_steps + order):
         fwd = np.sum(params * res[:, :, :, step - order : step], axis=-1)
@@ -500,7 +500,7 @@ def generate_samples_like(
         else:
             lab = "Input timeseries"
         ax.plot(
-            range(1, samples_plot.sizes["time"] + 1),
+            range(1, min(ts_plot.sizes["time"]+1, samples_plot.sizes["time"] + 1)),
             ts_plot.isel(time=slice(-samples_plot.sizes["time"], None)),
             label=lab,
             color="k",
