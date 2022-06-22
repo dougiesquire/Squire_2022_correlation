@@ -258,6 +258,27 @@ def calculate_period_AMV_index(ds, period_months):
     return calculate_AMV_index(ds_period, mean_dim)
 
 
+def round_to_start_of_month(ds, dim):
+    """
+    Return provided array with specified time dimension rounded to the start of
+    the month
+
+    Parameters
+    ----------
+    ds : xarray Dataset
+        The dataset with a dimension(s) to round
+    dim : str
+        The name of the dimensions to round
+    """
+    from xarray.coding.cftime_offsets import MonthBegin
+
+    if isinstance(dim, str):
+        dim = [dim]
+    for d in dim:
+        ds = ds.copy().assign_coords({d: ds[d].compute().dt.floor("D") - MonthBegin()})
+    return ds
+
+
 def coarsen(ds, window_size, dim, start_points=None):
     """
     Coarsen data, applying 'max' to all relevant coords and optionally starting
