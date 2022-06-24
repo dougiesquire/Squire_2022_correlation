@@ -41,9 +41,13 @@ def main():
         # logger.info("Preparing MPI-ESM1.2-HR data")
         # _ = data.prepare_MPI_ESM1_2_HR_dcpp_variable("psl", "Amon")
         
-        logger.info("Preparing IPSL-CM6A-LR data")
+        # logger.info("Preparing IPSL-CM6A-LR data")
         # _ = data.prepare_IPSL_CM6A_LR_dcpp_variable("psl", "Amon")
         ## _ = data.prepare_IPSL_CM6A_LR_dcpp_variable("tos", "Omon") # runs out of memory
+        
+        logger.info("Preparing NorCPM1")
+        _ = data.prepare_NorCPM1_dcpp_variable("psl", "Amon")
+        _ = data.prepare_NorCPM1_dcpp_variable("tos", "Omon")
     
         # logger.info("Preparing HadSLP2r data")
         # _ = data.prepare_HadSLP2r()

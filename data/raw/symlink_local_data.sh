@@ -37,3 +37,7 @@ ln -sfn /g/data/oi10/replicas/CMIP6/CMIP/MPI-M/MPI-ESM1-2-HR/historical ${SCRIPT
 ln -sfn /g/data/oi10/replicas/CMIP6/DCPP/IPSL/IPSL-CM6A-LR/dcppA-hindcast ${SCRIPT_DIR}/IPSL-CM6A-LR_dcppA-hindcast
 
 ln -sfn /g/data/oi10/replicas/CMIP6/CMIP/IPSL/IPSL-CM6A-LR/historical ${SCRIPT_DIR}/IPSL-CM6A-LR_historical
+
+ln -sfn /g/data/oi10/replicas/CMIP6/DCPP/NCC/NorCPM1/dcppA-hindcast/ ${SCRIPT_DIR}/NorCPM1_dcppA-hindcast
+
+ln -sfn /g/data/oi10/replicas/CMIP6/CMIP/NCC/NorCPM1/historical ${SCRIPT_DIR}/NorCPM1_historical
