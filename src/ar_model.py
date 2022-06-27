@@ -1,4 +1,4 @@
-"Tools for working with Autoregressive models"
+"Tools for working with (Vector) Autoregressive models"
 
 
 import numpy as np
