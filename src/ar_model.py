@@ -51,93 +51,132 @@ def yule_walker(ds, order, dim="time", kwargs={}):
 
 def fit(
     ds,
-    order,
+    n_lags,
     dim="time",
-    ar_kwargs=dict(trend="n"),
-    select_order_kwargs=dict(maxlag=10, ic="aic", glob=False, trend="n"),
+    kwargs={},
 ):
     """
-    Fit an AR model(s)
+    Fit a (Vector) Autoregressive model(s)
 
     Parameters
     ----------
-    ds : xarray object
-        The data to fit the AR model to
-    order : int or str
-        The order of the AR(n) process to fit. Alternatively, users can pass
-        the string "select_order" in order to use
+    ds : xarray Dataset
+        The data to fit the (V)AR model to. If multiple variables are available
+        in ds, a VAR model is fitted
+    n_lags : int or str
+        The order of the (V)AR(n) process to fit. For single variable (AR)
+        models, users can alternatively pass the string "select_order" to use
         statsmodels.tsa.ar_model.ar_select_order to determine the order.
     dim : str
         The dimension along which to fit the AR model(s)
-    ar_kwargs: dict, optional
-        kwargs to pass to statsmodels.tsa.ar_model.AutoReg. Only used if order
-        is an integer
-    select_order_kwargs: dict, optional
-        kwargs to pass to statsmodels.tsa.ar_model.ar_select_order. Only used
-        if order="select_order".
-    """
-    from statsmodels.tsa.ar_model import AutoReg, ar_select_order
+    kwargs: dict, optional
+        kwargs to pass to the relevant statsmodels (sm) method
+        - For AR model with n_lags specified: sm.tsa.ar_model.AutoReg
+        - For AR model with n_lags="select_order": sm.tsa.ar_model.ar_select_order
+        - For VAR model with n_lags specified: sm.tsa.api.VAR
 
+    Returns
+    -------
+    params : xarray Dataset
+        The fitted (V)AR model parameters. For each variable, the first
+        n_vars*n_lags parameters along the "params" dimension correspond to the
+        (V)AR coefficients in the order output by
+        statsmodels.tsa.api.VAR(data).fit(n_lags, trend="n").params, i.e.:
+        [ϕ_var1_lag1, ..., ϕ_varN_lag1, ..., ϕ_var1_lagM, ..., ϕ_varN_lagM]
+        and the last n_vars parameters correspond to the noise (co)variances:
+        [sigma2_var1, ..., sigma2_varN]
+    """
     def _ar_select_order(data, maxlag, kwargs):
+        "Wrapper for statsmodels.tsa.ar_model.ar_select_order"
         res = ar_select_order(data, maxlag, **kwargs).model.fit()
         params = np.empty(maxlag + 1)
         params[:] = np.nan
         if res.ar_lags is not None:
             params[[l - 1 for l in res.ar_lags]] = res.params
-        params[-1] = np.sqrt(res.sigma2)
+        params[-1] = res.sigma2
         return params
 
-    def _ar(data, order, kwargs):
-        res = AutoReg(data, lags=order, **kwargs).fit()
-        return np.concatenate((res.params, [np.sqrt(res.sigma2)]))
+    def _ar(data, n_lags, kwargs):
+        "Wrapper for statsmodels.tsa.ar_model.AutoReg"
+        res = AutoReg(data, lags=n_lags, **kwargs).fit()
+        return np.concatenate((res.params, [res.sigma2]))
 
-    if order == "select_order":
-        assert "maxlag" in select_order_kwargs, (
-            "Must provide maxlag parameter to select_order_kwargs when using "
-            "order='select_order'"
-        )
+    def _var(*data, n_lags, kwargs):
+        "Wrapper for statsmodels.tsa.api.VAR"
+        res = VAR(np.column_stack(data)).fit(n_lags, **kwargs)
+        params = np.vstack((res.params, res.sigma_u))
+        return tuple([params[:, i] for i in range(params.shape[1])])
 
-        func = _ar_select_order
-        kwargs = select_order_kwargs.copy()
-        maxlag = kwargs.pop("maxlag")
-        kwargs = dict(maxlag=maxlag, kwargs=kwargs)
-        n_params = maxlag + 1
+    if "trend" in kwargs:
+        if kwargs["trend"] != "n":
+            raise ValueError("The function does not support fitting with a trend")
     else:
-        func = _ar
-        kwargs = dict(order=order, kwargs=ar_kwargs)
-        n_params = order + 1
+        kwargs["trend"] = "n"
+
+    variables = list(ds.data_vars)
+    if len(variables) > 1:
+        from statsmodels.tsa.api import VAR
+        
+        if n_lags == "select_order":
+            raise ValueError("Cannot use 'select_order' with a VAR model")
+        func = _var
+        kwargs = dict(n_lags=n_lags, kwargs=kwargs)
+        n_params = len(variables) * n_lags + len(variables)
+    else:
+        from statsmodels.tsa.ar_model import AutoReg, ar_select_order
+        
+        if n_lags == "select_order":
+            assert (
+                "maxlag" in kwargs
+            ), "Must provide maxlag parameter to kwargs when using n_lags='select_order'"
+
+            func = _ar_select_order
+            maxlag = kwargs.pop("maxlag")
+            kwargs = dict(maxlag=maxlag, kwargs=kwargs)
+            n_params = kwargs["maxlag"] + 1
+            n_lags = n_params - 1
+        else:
+            func = _ar
+            kwargs = dict(n_lags=n_lags, kwargs=kwargs)
+            n_params = n_lags + 1
+
+    data = [ds[v] for v in ds]
+    input_core_dims = len(variables) * [[dim]]
+    output_core_dims = len(variables) * [["params"]]
+    output_dtypes = len(variables) * [float]
 
     res = xr.apply_ufunc(
         func,
-        ds,
+        *data,
         kwargs=kwargs,
-        input_core_dims=[[dim]],
-        output_core_dims=[["params"]],
+        input_core_dims=input_core_dims,
+        output_core_dims=output_core_dims,
         vectorize=True,
         dask="parallelized",
-        output_dtypes=[float],
+        output_dtypes=output_dtypes,
         dask_gufunc_kwargs=dict(output_sizes={"params": n_params}),
     )
-    res = res.assign_coords(
-        {"params": [f"phi_{lag}" for lag in range(1, n_params)] + ["sigma_e"]}
-    ).dropna("params", how="all")
-    res = res.assign_coords({"order": res.count("params") - 1})
+
+    if len(variables) > 1:
+        res = xr.merge([r.to_dataset(name=v) for v, r in zip(variables, res)])
+    else:
+        res = res.to_dataset()
+
+    param_labels = [f"{v}.lag{l}" for l in range(1, n_lags + 1) for v in variables] + [
+        f"{v}.noise_var" for v in variables
+    ]
+    res = res.assign_coords({"params": param_labels}).dropna("params", how="all")
     return res
 
 
-def generate_samples(
-    params, scale, n_times, n_samples, n_members=None, rolling_means=None
-):
+def generate_samples(params, n_times, n_samples, n_members=None, rolling_means=None):
     """
-    Generate random samples from an AR process. Note, the lags of the 
-    AR params must be consecutive.
+    Generate random samples from a (Vector) Autoregressive process.
 
     Parameters
     ----------
-    params : numpy array
-        The AR parameters
-    scale : float
-        The standard deviation of noise.
+    params : xarray Dataset
+        The (V)AR parameters as output by ar_model.fit()
     n_times : int
         The number of timesteps per sample
     n_samples : int
@@ -149,38 +188,87 @@ def generate_samples(
         are computed by averaging prediction times 1->L.
     rolling_means : list, optional
         A list of lengths of rolling means to compute
+
+    Returns
+    -------
+    samples : xarray Dataset
+        Simulations of the (V)AR process
     """
-    from statsmodels.tsa.arima_process import ArmaProcess
+
+    variables = list(params.data_vars)
+    n_vars = len(variables)
+    n_coefs = int(params.sizes["params"] - n_vars)
+    n_lags = int(n_coefs / n_vars)
+
+    # Extract coefs and noise variance
+    sigma2 = np.column_stack(
+        [params[v].isel(params=slice(-len(variables), None)) for v in variables]
+    )
+    coefs = np.column_stack(
+        [params[v].isel(params=slice(-len(variables))) for v in variables]
+    )
 
     if n_members is not None:
-        extend = len(params) - 1
+        extend = n_coefs - 1
     elif rolling_means is None:
         extend = 0
     else:
         extend = max(rolling_means) - 1
 
-    # Generate some AR series
-    process = ArmaProcess(np.concatenate(([1], -params)))
-    s = process.generate_sample(
-        nsample=(n_times + extend, n_samples), scale=scale, axis=0
-    ).astype("float32")
+    dims = ["time", "sample"]
+    coords = {
+        "time": range(1, n_times + extend + 1),
+        "sample": range(n_samples),
+    }
 
-    if n_members is None:
-        s = xr.DataArray(
-            s,
-            coords={
-                "time": range(1, n_times + extend + 1),
-                "sample": range(n_samples),
-            },
-        )
+    if len(variables) > 1:
+        # VAR process
+        from statsmodels.tsa.vector_ar.var_model import VARProcess
+
+        # Restack coefs to format expected by VARProcess.simulate_var
+        coefs = coefs.reshape((n_lags, n_vars, n_vars)).swapaxes(1, 2)
+
+        # For trend = "n" (see statsmodels/tsa/vector_ar/var_model.py#L1356):
+        coefs_exog = coefs[:0].T
+        _params_info = {
+            "k_trend": 0,
+            "k_exog_user": 0,
+            "k_ar": n_lags,
+        }
+
+        process = VARProcess(coefs, coefs_exog, sigma2, _params_info=_params_info)
+        s = np.empty(shape=(n_times + extend, n_vars, n_samples))
+        extend += n_lags
+        for i in range(n_samples):
+            s[..., i] = process.simulate_var(steps=n_times + extend).astype("float32")[
+                n_lags:
+            ]
+        s = [d.squeeze(axis=1) for d in np.hsplit(s, n_vars)]
     else:
+        # AR process
+        from statsmodels.tsa.arima_process import ArmaProcess
+
+        process = ArmaProcess(np.concatenate(([1], -coefs.flatten())))
+        s = [
+            process.generate_sample(
+                nsample=(n_times + extend, n_samples),
+                scale=np.sqrt(sigma2),
+                axis=0,
+            ).astype("float32")
+        ]
+
+    s = xr.Dataset(
+        data_vars={v: (dims, d) for v, d in zip(variables, s)},
+        coords=coords,
+    )
+
+    if n_members is not None:
         n_leads = 1 if rolling_means is None else max(rolling_means)
         s = predict(
-            process.arcoefs,
+            params,
             s,
             n_leads,
             n_members=n_members,
-            scale=scale,
         )
         s = s.rename({"init": "time"})
 
@@ -208,64 +296,121 @@ def generate_samples(
     return s.squeeze(drop=True)
 
 
-def predict(params, inits, n_steps, n_members=1, scale=None):
+def predict(params, inits, n_steps, n_members=1):
     """
-    Advance an Autoregressive model forward in time from initial conditions
+    Advance a (Vector) Autoregressive model forward in time from initial conditions
     by n_steps
 
     Parameters
     ----------
-    params : numpy array
-        The AR(n) model coefficients of the form [param_lag_1, param_lag_2,
-        ... param_lag_n]
-    inits : numpy array
-        Array containing the initial conditions. Can be 1D or 2D. If the
-        latter, the second axis should contain different samples of initial
-        conditions.
+    params : xarray Dataset
+        The (V)AR parameters as output by ar_model.fit().
+    inits : xarray Dataset
+        Dataset containing the initial conditions for the predictions. Must have
+        the same variables as params and a "time" dimension
     n_steps : int
         The number of timesteps to step forward from each initial condition
-    scale : float
-        The standard deviation of the noise term in the AR(n) model. If None,
-        no noise term is included in the predictive model
+    n_members : int
+        The number of ensemble members to run from each initial condition. Members
+        differ only in their realisation of the (V)AR noise component
+
+    Returns
+    -------
+    prediction : xarray Dataset
+        The predictions made from each initial condition
     """
 
-    def _epsilon(scale, size):
-        return np.random.normal(scale=scale, size=size)
+    variables = list(params.data_vars)
+    n_vars = len(variables)
+    n_coefs = int(params.sizes["params"] - n_vars)
+    n_lags = int(n_coefs / n_vars)
 
-    order = len(params)
-    params = np.flip(params)
+    # Reorder the coefs so that they can be easily matmul by the predictors and
+    # then appended to predictors to make the next prediction. I.e. reorder from
+    # the input order:
+    # var1_lag1, ..., varN_lag1, ..., var1_lagM, ..., varN_lagM
+    # to:
+    # var1_lagM, ..., varN_lagM, ..., var1_lag1, ..., varN_lag1
+    sigma2 = np.column_stack(
+        [params[v].isel(params=slice(-len(variables), None)) for v in variables]
+    )
+    sort_coefs = [f"{v}.lag{l}" for l in range(n_lags, 0, -1) for v in variables]
+    coefs = np.column_stack([params.sel(params=sort_coefs)[v] for v in variables])
 
     # Some quick checks
-    assert len(inits) >= len(params), (
+    assert inits.sizes["time"] >= n_lags, (
         f"At least {order} initial conditions must be provided for an "
         f"AR({order}) model"
     )
 
-    if inits.ndim == 1:
-        inits = np.expand_dims(inits, axis=-1)
+    def _predict(*inits, coefs, sigma2, n_steps, n_members):
+        """Advance a (V)AR model from initial conditions"""
 
-    inits_stacked = sliding_window_view(inits, window_shape=order, axis=0)
+        # Stack the inits as predictors, sorted so that they are ordered
+        # consistently with the order of coefs
+        inits_lagged = [
+            sliding_window_view(init, window_shape=n_lags, axis=-1) for init in inits
+        ]
+        inits_lagged = np.stack(inits_lagged, axis=-1).reshape(
+            inits_lagged[0].shape[:-1] + (-1,), order="C"
+        )
 
-    # res = [member, init, sample, lead]
-    res = np.empty((n_members, *inits_stacked.shape[:-1], n_steps + order), dtype="float32")
-    res[:, :, :, :order] = inits_stacked
-    for step in range(order, n_steps + order):
-        fwd = np.sum(params * res[:, :, :, step - order : step], axis=-1)
+        res = np.empty(
+            (n_members, *inits_lagged.shape[:-1], n_vars * n_steps + n_coefs),
+            dtype="float32",
+        )
+        res[..., :n_coefs] = inits_lagged
+        for step in range(n_coefs, n_vars * n_steps + n_coefs, n_vars):
+            fwd = np.matmul(res[..., step - n_coefs : step], coefs)
 
-        if scale is not None:
-            fwd += _epsilon(scale, fwd.shape)
-        res[:, :, :, step] = fwd
+            # Add noise
+            if n_vars > 1:
+                noise = np.random.RandomState().multivariate_normal(
+                    np.zeros(len(sigma2)), sigma2, size=fwd.shape[:-1]
+                )
+            else:
+                noise = np.random.normal(scale=np.sqrt(sigma2), size=fwd.shape)
+            fwd += noise
+            res[..., step : step + n_vars] = fwd
 
-    # Bundle into xarray DataArray for convenience
-    return xr.DataArray(
-        res[:, :, :, order:],
-        coords={
-            "member": range(n_members),
-            "init": range(order - 1, len(inits)),
-            "sample": range(inits.shape[1]),
-            "lead": range(1, n_steps + 1),
+        # Drop the first n_coefs steps, which correspond to the initial conditions
+        res = res[..., n_coefs:]
+
+        # Split into variables
+        if n_vars > 1:
+            res = [res[..., i::n_vars] for i in range(n_vars)]
+            return tuple(res)
+        else:
+            return res
+
+    pred = xr.apply_ufunc(
+        _predict,
+        *[inits[v] for v in variables],
+        kwargs={
+            "coefs": coefs,
+            "sigma2": sigma2,
+            "n_steps": n_steps,
+            "n_members": n_members,
         },
-    ).squeeze(drop=True)
+        input_core_dims=len(variables) * [["time"]],
+        output_core_dims=len(variables) * [["member", "time", "lead"]],
+        exclude_dims=set(["time"]),
+        vectorize=True,
+        dask="parallelized",
+    )
+
+    if len(variables) > 1:
+        pred = xr.merge([p.to_dataset(name=v) for v, p in zip(variables, pred)])
+    else:
+        pred = pred.to_dataset()
+    pred = pred.rename({"time": "init"})
+    coords = {
+        "member": range(n_members),
+        "init": inits["time"].values[n_lags - 1 :],
+        "lead": range(1, n_steps + 1),
+        **inits.drop("time").coords,
+    }
+    return pred.assign_coords(coords)
 
 
 def generate_samples_like(
