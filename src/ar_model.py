@@ -86,13 +86,14 @@ def fit(
         and the last n_vars parameters correspond to the noise (co)variances:
         [sigma2_var1, ..., sigma2_varN]
     """
+
     def _ar_select_order(data, maxlag, kwargs):
         "Wrapper for statsmodels.tsa.ar_model.ar_select_order"
         res = ar_select_order(data, maxlag, **kwargs).model.fit()
         params = np.empty(maxlag + 1)
         params[:] = np.nan
         if res.ar_lags is not None:
-            params[[l - 1 for l in res.ar_lags]] = res.params
+            params[[lag - 1 for lag in res.ar_lags]] = res.params
         params[-1] = res.sigma2
         return params
 
@@ -116,7 +117,7 @@ def fit(
     variables = list(ds.data_vars)
     if len(variables) > 1:
         from statsmodels.tsa.api import VAR
-        
+
         if n_lags == "select_order":
             raise ValueError("Cannot use 'select_order' with a VAR model")
         func = _var
@@ -124,7 +125,7 @@ def fit(
         n_params = len(variables) * n_lags + len(variables)
     else:
         from statsmodels.tsa.ar_model import AutoReg, ar_select_order
-        
+
         if n_lags == "select_order":
             assert (
                 "maxlag" in kwargs
@@ -162,9 +163,9 @@ def fit(
     else:
         params = params.to_dataset()
 
-    param_labels = [f"{v}.lag{l}" for l in range(1, n_lags + 1) for v in variables] + [
-        f"{v}.noise_var" for v in variables
-    ]
+    param_labels = [
+        f"{v}.lag{lag}" for lag in range(1, n_lags + 1) for v in variables
+    ] + [f"{v}.noise_var" for v in variables]
     params = params.assign_coords({"params": param_labels}).dropna("params", how="all")
     return params
 
@@ -208,7 +209,7 @@ def generate_samples(params, n_times, n_samples, n_members=None, rolling_means=N
         [params[v].isel(params=slice(-len(variables))) for v in variables]
     )
 
-    if (n_members is not None):
+    if n_members is not None:
         extend = n_lags - 1 if n_lags > 0 else 0
     elif rolling_means is None:
         extend = 0
@@ -292,9 +293,7 @@ def generate_samples(params, n_times, n_samples, n_members=None, rolling_means=N
 
         s = xr.concat(res, dim="rolling_mean", join="inner")
     s = s.assign_coords({"time": range(1, s.sizes["time"] + 1)})
-    s = s.assign_coords(
-        {"model_order": n_lags}
-    )
+    s = s.assign_coords({"model_order": n_lags})
 
     return s.squeeze(drop=True)
 
@@ -337,7 +336,7 @@ def predict(params, inits, n_steps, n_members=1):
     sigma2 = np.column_stack(
         [params[v].isel(params=slice(-len(variables), None)) for v in variables]
     )
-    sort_coefs = [f"{v}.lag{l}" for l in range(n_lags, 0, -1) for v in variables]
+    sort_coefs = [f"{v}.lag{lag}" for lag in range(n_lags, 0, -1) for v in variables]
     coefs = np.column_stack([params.sel(params=sort_coefs)[v] for v in variables])
 
     # Some quick checks
@@ -348,26 +347,30 @@ def predict(params, inits, n_steps, n_members=1):
 
     def _predict(*inits, coefs, sigma2, n_steps, n_members):
         """Advance a (V)AR model from initial conditions"""
+
         def _get_noise(sigma2, size):
             if len(sigma2) > 1:
                 return np.random.RandomState().multivariate_normal(
                     np.zeros(len(sigma2)), sigma2, size=size
                 )
             else:
-                return np.expand_dims(np.random.normal(scale=np.sqrt(sigma2), size=size), -1)
+                return np.expand_dims(
+                    np.random.normal(scale=np.sqrt(sigma2), size=size), -1
+                )
 
         if n_lags != 0:
             # Stack the inits as predictors, sorted so that they are ordered
             # consistently with the order of coefs
             inits_lagged = [
-                sliding_window_view(init, window_shape=n_lags, axis=-1) for init in inits
+                sliding_window_view(init, window_shape=n_lags, axis=-1)
+                for init in inits
             ]
             inits_lagged = np.stack(inits_lagged, axis=-1).reshape(
                 inits_lagged[0].shape[:-1] + (-1,), order="C"
             )
 
             shape = (n_members, *inits_lagged.shape[:-1], n_vars * n_steps + n_coefs)
-            res = np.empty(shape, dtype="float32")        
+            res = np.empty(shape, dtype="float32")
             res[..., :n_coefs] = inits_lagged
             for step in range(n_coefs, n_vars * n_steps + n_coefs, n_vars):
                 fwd = np.matmul(res[..., step - n_coefs : step], coefs)
@@ -380,11 +383,13 @@ def predict(params, inits, n_steps, n_members=1):
             res = res[..., n_coefs:]
         else:
             shape = (n_members, *inits[0].shape)
-            res = np.concatenate([_get_noise(sigma2, shape) for step in range(n_steps)], axis=-1)
+            res = np.concatenate(
+                [_get_noise(sigma2, shape) for step in range(n_steps)], axis=-1
+            )
 
         # Split into variables and move member axis to -2 position
         if n_vars > 1:
-            res = [np.moveaxis(res[..., i::n_vars],0,-2) for i in range(n_vars)]
+            res = [np.moveaxis(res[..., i::n_vars], 0, -2) for i in range(n_vars)]
             return tuple(res)
         else:
             return np.moveaxis(res, 0, -2)
@@ -463,9 +468,9 @@ def generate_samples_like(
     params = fit(ds, n_lags=n_lags, kwargs=fit_kwargs)
     if "member" in params.dims:
         # Use the most common order and average params across members
-        n_lags = stats.mode(p.n_lags, dim="member").compute().item()
+        n_lags = stats.mode(params.n_lags, dim="member").compute().item()
         params = fit(ds, n_lags=n_lags).mean("member")
-    
+
     samples = generate_samples(
         params,
         n_times=n_times,
@@ -479,7 +484,7 @@ def generate_samples_like(
         q = (0.05, 0.95)
         variables = list(ds.data_vars)
         n_rows = len(variables) * 4
-        
+
         if n_lags == "select_order":
             n_lags = int((params.sizes["params"] - len(variables)) / len(variables))
         legend_str = "VAR" if len(variables) > 1 else "AR"

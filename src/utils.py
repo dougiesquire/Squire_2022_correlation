@@ -167,7 +167,7 @@ def calculate_NAO_index(ds, time_dim="time"):
 def _get_consecutive_month_avg(ds, months, time_dim):
     """
     Return the average over a set of consecutive months
-    
+
     Parameters
     ----------
     ds : xarray Dataset or DataArray
@@ -185,6 +185,7 @@ def _get_consecutive_month_avg(ds, months, time_dim):
         .compute()
     )
     return coarsen(ds.where(period, drop=True), len(months), time_dim)
+
 
 def calculate_period_NAO_index(ds, period_months):
     """
@@ -206,7 +207,7 @@ def calculate_period_NAO_index(ds, period_months):
         time_dim = mean_dim = "time"
 
     ds_period = _get_consecutive_month_avg(ds, period_months, time_dim)
-    
+
     return calculate_NAO_index(ds_period, mean_dim)
 
 

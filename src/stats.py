@@ -159,13 +159,12 @@ def get_Type_I_error_rates(
             crits_block = []
             for block_start, block_end in zip(block_starts, block_ends):
                 v, pval = infer_metric(
-                    fcst.isel(sample=slice(block_start, block_end),
+                    fcst.isel(
+                        sample=slice(block_start, block_end),
                         time=slice(0, Nt),
                         member=slice(0, Nm),
                     ),
-                    obsv.isel(sample=slice(block_start, block_end),
-                        time=slice(0, Nt)
-                    ),
+                    obsv.isel(sample=slice(block_start, block_end), time=slice(0, Nt)),
                     metric=metric,
                     method=method,
                     method_kwargs=method_kwargs,

@@ -57,7 +57,7 @@ clean:
 
 ## Lint using black and flake8
 lint:
-	($(CONDA_ACTIVATE) $(ENV_NAME) ; black src ; flake8 --exclude=.ipynb_checkpoints --ignore=E203 src)
+	($(CONDA_ACTIVATE) $(ENV_NAME) ; black src ; flake8 --exclude=.ipynb_checkpoints --ignore=E203,E266 src)
 
 #################################################################################
 # PROJECT RULES                                                                 #

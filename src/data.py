@@ -389,10 +389,10 @@ def prepare_CanESM5_dcpp_variable(variable, realm):
     variant_id = "i1p2f1"
     grid = "gn"
     hindcast_years = range(1960, 2019 + 1)
-     # Some of 2021 is available but some missing (e.g s2021-r34i1p2f1/Omon)
+    # Some of 2021 is available but some missing (e.g s2021-r34i1p2f1/Omon)
     forecast_years = range(2020, 2020 + 1)
     if variable == "psl":
-        members = range(1, 20 + 1) # Only 20 psl members available for 1960 - 2016
+        members = range(1, 20 + 1)  # Only 20 psl members available for 1960 - 2016
     else:
         members = range(1, 40 + 1)
     version = "v20190429"
@@ -419,18 +419,18 @@ def prepare_CanESM5_dcpp_variable(variable, realm):
         version,
     )
     ds = xr.concat([dcppA, dcppB], dim="init")
-    
+
     ### Add cell area
     if realm == "Omon":
         file = (
-            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/Ofx/areacello/{grid}/{version}/"
-            f"areacello_Ofx_{model}_historical_r1{variant_id}_{grid}.nc"
+            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/Ofx/areacello/{grid}/"
+            f"{version}/areacello_Ofx_{model}_historical_r1{variant_id}_{grid}.nc"
         )
         rename = {"areacello": "area"}
     elif realm == "Amon":
         file = (
-            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/fx/areacella/{grid}/{version}/"
-            f"areacella_fx_{model}_historical_r1{variant_id}_{grid}.nc"
+            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/fx/areacella/{grid}/"
+            f"{version}/areacella_fx_{model}_historical_r1{variant_id}_{grid}.nc"
         )
         rename = {"areacella": "area"}
     else:
@@ -465,7 +465,7 @@ def prepare_CESM1_1_CAM5_CMIP5_dcpp_variable(variable, realm):
     variant_id = "i1p1f1"
     grid = "gn"
     hindcast_years = range(1960, 2017 + 1)
-     # Some of 2021 is available but some missing (e.g s2021-r34i1p2f1/Omon)
+    # Some of 2021 is available but some missing (e.g s2021-r34i1p2f1/Omon)
     members = range(1, 40 + 1)
     version = "v201910??"
     ds = _cmip6_dcpp(
@@ -479,18 +479,18 @@ def prepare_CESM1_1_CAM5_CMIP5_dcpp_variable(variable, realm):
         members,
         version,
     )
-    
+
     ### Add cell area
     if realm == "Omon":
         file = (
-            f"{RAW_DATA_DIR}/CESM2_historical/r1{variant_id}/Ofx/areacello/{grid}/v20190308/"
-            f"areacello_Ofx_CESM2_historical_r1{variant_id}_{grid}.nc"
+            f"{RAW_DATA_DIR}/CESM2_historical/r1{variant_id}/Ofx/areacello/{grid}/"
+            f"v20190308/areacello_Ofx_CESM2_historical_r1{variant_id}_{grid}.nc"
         )
         rename = {"areacello": "area"}
     elif realm == "Amon":
         file = (
-            f"{RAW_DATA_DIR}/CESM2_historical/r1{variant_id}/fx/areacella/{grid}/v20190308/"
-            f"areacella_fx_CESM2_historical_r1{variant_id}_{grid}.nc"
+            f"{RAW_DATA_DIR}/CESM2_historical/r1{variant_id}/fx/areacella/{grid}/"
+            f"v20190308/areacella_fx_CESM2_historical_r1{variant_id}_{grid}.nc"
         )
         rename = {"areacella": "area"}
     else:
@@ -537,18 +537,18 @@ def prepare_MIROC6_dcpp_variable(variable, realm):
         members,
         version,
     )
-    
+
     ### Add cell area
     if realm == "Omon":
         file = (
-            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/Ofx/areacello/{grid}/v20190311/"
-            f"areacello_Ofx_{model}_historical_r1{variant_id}_{grid}.nc"
+            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/Ofx/areacello/{grid}/"
+            f"v20190311/areacello_Ofx_{model}_historical_r1{variant_id}_{grid}.nc"
         )
         rename = {"areacello": "area"}
     elif realm == "Amon":
         file = (
-            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/fx/areacella/{grid}/v20190311/"
-            f"areacella_fx_{model}_historical_r1{variant_id}_{grid}.nc"
+            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/fx/areacella/{grid}/"
+            f"v20190311/areacella_fx_{model}_historical_r1{variant_id}_{grid}.nc"
         )
         rename = {"areacella": "area"}
     else:
@@ -595,18 +595,18 @@ def prepare_MPI_ESM1_2_HR_dcpp_variable(variable, realm):
         members,
         version,
     )
-    
+
     ### Add cell area
     if realm == "Omon":
         file = (
-            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/Ofx/areacello/{grid}/v20190710/"
-            f"areacello_Ofx_{model}_historical_r1{variant_id}_{grid}.nc"
+            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/Ofx/areacello/{grid}/"
+            f"v20190710/areacello_Ofx_{model}_historical_r1{variant_id}_{grid}.nc"
         )
         rename = {"areacello": "area"}
     elif realm == "Amon":
         file = (
-            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/fx/areacella/{grid}/v20190710/"
-            f"areacella_fx_{model}_historical_r1{variant_id}_{grid}.nc"
+            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/fx/areacella/{grid}/"
+            f"v20190710/areacella_fx_{model}_historical_r1{variant_id}_{grid}.nc"
         )
         rename = {"areacella": "area"}
     else:
@@ -653,15 +653,15 @@ def prepare_IPSL_CM6A_LR_dcpp_variable(variable, realm):
         members,
         version,
     )
-    
+
     ### Add cell area (already present for Omon)
     if realm == "Amon":
         file = (
-            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/fx/areacella/{grid}/v20180803/"
-            f"areacella_fx_{model}_historical_r1{variant_id}_{grid}.nc"
+            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/fx/areacella/{grid}/"
+            f"v20180803/areacella_fx_{model}_historical_r1{variant_id}_{grid}.nc"
         )
         rename = {"areacella": "area"}
-        
+
         area = xr.open_dataset(file, chunks={}).rename(rename)
         ds = ds.assign_coords(area)
     elif realm != "Omon":
@@ -718,26 +718,29 @@ def prepare_NorCPM1_dcpp_variable(variable, realm):
         members,
         version,
     )
-    ds = xr.concat([ds_i1, ds_i2.assign_coords({"member": ds_i2.member+len(members)})], dim="member")
-    
+    ds = xr.concat(
+        [ds_i1, ds_i2.assign_coords({"member": ds_i2.member + len(members)})],
+        dim="member",
+    )
+
     ### Add cell area
     if realm == "Omon":
         file = (
-            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id_i1}/Ofx/areacello/{grid}/v20200724/"
-            f"areacello_Ofx_{model}_historical_r1{variant_id_i1}_{grid}.nc"
+            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id_i1}/Ofx/areacello/{grid}/"
+            f"v20200724/areacello_Ofx_{model}_historical_r1{variant_id_i1}_{grid}.nc"
         )
         rename = {"areacello": "area"}
     elif realm == "Amon":
         file = (
-            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id_i1}/fx/areacella/{grid}/v20200724/"
-            f"areacella_fx_{model}_historical_r1{variant_id_i1}_{grid}.nc"
+            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id_i1}/fx/areacella/{grid}/"
+            f"v20200724/areacella_fx_{model}_historical_r1{variant_id_i1}_{grid}.nc"
         )
         rename = {"areacella": "area"}
     else:
         raise ValueError(f"I don't know where to find the area for realm: {realm}")
     area = xr.open_dataset(file, chunks={}).rename(rename)
     ds = ds.assign_coords(area)
-    
+
     # Interpolate to regular grid
     ds = interpolate_to_regular_grid(ds, resolution=1.0)
 
@@ -770,7 +773,7 @@ def prepare_HadISST():
     ]
     ds = ds.rename({"latitude": "lat", "longitude": "lon"})
     ds = ds.assign_coords({"area": gridarea_cdo(ds)})
-    
+
     # Mask sea ice
     ds = ds.where(ds > -1000)
 
