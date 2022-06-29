@@ -145,7 +145,7 @@ def fit(
     output_core_dims = len(variables) * [["params"]]
     output_dtypes = len(variables) * [float]
 
-    res = xr.apply_ufunc(
+    params = xr.apply_ufunc(
         func,
         *data,
         kwargs=kwargs,
@@ -158,15 +158,15 @@ def fit(
     )
 
     if len(variables) > 1:
-        res = xr.merge([r.to_dataset(name=v) for v, r in zip(variables, res)])
+        params = xr.merge([r.to_dataset(name=v) for v, r in zip(variables, params)])
     else:
-        res = res.to_dataset()
+        params = params.to_dataset()
 
     param_labels = [f"{v}.lag{l}" for l in range(1, n_lags + 1) for v in variables] + [
         f"{v}.noise_var" for v in variables
     ]
-    res = res.assign_coords({"params": param_labels}).dropna("params", how="all")
-    return res
+    params = params.assign_coords({"params": param_labels}).dropna("params", how="all")
+    return params
 
 
 def generate_samples(params, n_times, n_samples, n_members=None, rolling_means=None):
@@ -208,8 +208,8 @@ def generate_samples(params, n_times, n_samples, n_members=None, rolling_means=N
         [params[v].isel(params=slice(-len(variables))) for v in variables]
     )
 
-    if n_members is not None:
-        extend = n_coefs - 1
+    if (n_members is not None):
+        extend = n_lags - 1 if n_lags > 0 else 0
     elif rolling_means is None:
         extend = 0
     else:
@@ -292,6 +292,9 @@ def generate_samples(params, n_times, n_samples, n_members=None, rolling_means=N
 
         s = xr.concat(res, dim="rolling_mean", join="inner")
     s = s.assign_coords({"time": range(1, s.sizes["time"] + 1)})
+    s = s.assign_coords(
+        {"model_order": n_lags}
+    )
 
     return s.squeeze(drop=True)
 
@@ -339,49 +342,52 @@ def predict(params, inits, n_steps, n_members=1):
 
     # Some quick checks
     assert inits.sizes["time"] >= n_lags, (
-        f"At least {order} initial conditions must be provided for an "
-        f"AR({order}) model"
+        f"At least {n_lags} initial conditions must be provided for an "
+        f"AR({n_lags}) model"
     )
 
     def _predict(*inits, coefs, sigma2, n_steps, n_members):
         """Advance a (V)AR model from initial conditions"""
-
-        # Stack the inits as predictors, sorted so that they are ordered
-        # consistently with the order of coefs
-        inits_lagged = [
-            sliding_window_view(init, window_shape=n_lags, axis=-1) for init in inits
-        ]
-        inits_lagged = np.stack(inits_lagged, axis=-1).reshape(
-            inits_lagged[0].shape[:-1] + (-1,), order="C"
-        )
-
-        res = np.empty(
-            (n_members, *inits_lagged.shape[:-1], n_vars * n_steps + n_coefs),
-            dtype="float32",
-        )
-        res[..., :n_coefs] = inits_lagged
-        for step in range(n_coefs, n_vars * n_steps + n_coefs, n_vars):
-            fwd = np.matmul(res[..., step - n_coefs : step], coefs)
-
-            # Add noise
-            if n_vars > 1:
-                noise = np.random.RandomState().multivariate_normal(
-                    np.zeros(len(sigma2)), sigma2, size=fwd.shape[:-1]
+        def _get_noise(sigma2, size):
+            if len(sigma2) > 1:
+                return np.random.RandomState().multivariate_normal(
+                    np.zeros(len(sigma2)), sigma2, size=size
                 )
             else:
-                noise = np.random.normal(scale=np.sqrt(sigma2), size=fwd.shape)
-            fwd += noise
-            res[..., step : step + n_vars] = fwd
+                return np.expand_dims(np.random.normal(scale=np.sqrt(sigma2), size=size), -1)
 
-        # Drop the first n_coefs steps, which correspond to the initial conditions
-        res = res[..., n_coefs:]
+        if n_lags != 0:
+            # Stack the inits as predictors, sorted so that they are ordered
+            # consistently with the order of coefs
+            inits_lagged = [
+                sliding_window_view(init, window_shape=n_lags, axis=-1) for init in inits
+            ]
+            inits_lagged = np.stack(inits_lagged, axis=-1).reshape(
+                inits_lagged[0].shape[:-1] + (-1,), order="C"
+            )
 
-        # Split into variables
+            shape = (n_members, *inits_lagged.shape[:-1], n_vars * n_steps + n_coefs)
+            res = np.empty(shape, dtype="float32")        
+            res[..., :n_coefs] = inits_lagged
+            for step in range(n_coefs, n_vars * n_steps + n_coefs, n_vars):
+                fwd = np.matmul(res[..., step - n_coefs : step], coefs)
+
+                # Add noise
+                fwd += _get_noise(sigma2, fwd.shape[:-1])
+                res[..., step : step + n_vars] = fwd
+
+            # Drop the first n_coefs steps, which correspond to the initial conditions
+            res = res[..., n_coefs:]
+        else:
+            shape = (n_members, *inits[0].shape)
+            res = np.concatenate([_get_noise(sigma2, shape) for step in range(n_steps)], axis=-1)
+
+        # Split into variables and move member axis to -2 position
         if n_vars > 1:
-            res = [res[..., i::n_vars] for i in range(n_vars)]
+            res = [np.moveaxis(res[..., i::n_vars],0,-2) for i in range(n_vars)]
             return tuple(res)
         else:
-            return res
+            return np.moveaxis(res, 0, -2)
 
     pred = xr.apply_ufunc(
         _predict,
@@ -393,10 +399,8 @@ def predict(params, inits, n_steps, n_members=1):
             "n_members": n_members,
         },
         input_core_dims=len(variables) * [["time"]],
-        output_core_dims=len(variables) * [["member", "time", "lead"]],
+        output_core_dims=len(variables) * [["time", "member", "lead"]],
         exclude_dims=set(["time"]),
-        vectorize=True,
-        dask="parallelized",
     )
 
     if len(variables) > 1:
@@ -404,9 +408,10 @@ def predict(params, inits, n_steps, n_members=1):
     else:
         pred = pred.to_dataset()
     pred = pred.rename({"time": "init"})
+    first_init_idx = 0 if n_lags == 0 else n_lags - 1
     coords = {
         "member": range(n_members),
-        "init": inits["time"].values[n_lags - 1 :],
+        "init": inits["time"].values[first_init_idx:],
         "lead": range(1, n_steps + 1),
         **inits.drop("time").coords,
     }
@@ -414,12 +419,13 @@ def predict(params, inits, n_steps, n_members=1):
 
 
 def generate_samples_like(
-    ts,
-    order,
+    ds,
+    n_lags,
     n_times,
     n_samples,
     n_members=None,
     rolling_means=None,
+    fit_kwargs={},
     plot_diagnostics=True,
 ):
     """
@@ -428,13 +434,14 @@ def generate_samples_like(
 
     Parameters
     ----------
-    ts : xarray object
-        The timeseries to fit the AR model to. If a "member" dimension exists,
-        AR params are calculated for each member separately and the ensemble
-        mean parameters are used to generate the synthetic signals.
-    order : int or str
-        The order of the AR(n) process to fit. Alternatively, users can pass
-        the string "select_order" in order to use
+    ds : xarray Dataset
+        The data to fit the (V)AR model to. If multiple variables are available
+        in ds, a VAR model is fitted. If a "member" dimension exists, (V)AR
+        params are calculated for each member separately and the ensemble mean
+        parameters are used to generate the synthetic signals.
+    n_lags : int or str
+        The order of the (V)AR(n) process to fit. For single variable (AR)
+        models, users can alternatively pass the string "select_order" to use
         statsmodels.tsa.ar_model.ar_select_order to determine the order.
     n_times : int
         The number of timesteps per sample
@@ -447,22 +454,20 @@ def generate_samples_like(
         are computed by averaging prediction times 1->L.
     rolling_means : list, optional
         A list of lengths of rolling means to compute
+    fit_kwargs : dict, optional
+        kwargs to pass to ar_model.fit()
     plot_diagnostics : boolean, optional
         If True, plot some diagnostic plots
     """
 
-    p = fit(ts, order=order)
-    if "member" in p.dims:
+    params = fit(ds, n_lags=n_lags, kwargs=fit_kwargs)
+    if "member" in params.dims:
         # Use the most common order and average params across members
-        order = stats.mode(p.order, dim="member").compute().item()
-        p = fit(ts, order=order).mean("member").assign_coords({"order": order})
-    order = p.order.values
-    params = p.isel(params=slice(0, -1)).values
-    scale = p.isel(params=-1).values
-
+        n_lags = stats.mode(p.n_lags, dim="member").compute().item()
+        params = fit(ds, n_lags=n_lags).mean("member")
+    
     samples = generate_samples(
         params,
-        scale,
         n_times=n_times,
         n_samples=n_samples,
         n_members=n_members,
@@ -470,97 +475,130 @@ def generate_samples_like(
     )
 
     if plot_diagnostics:
-        fig = plt.figure(figsize=(12, 14))
-
         alpha = 0.2
         q = (0.05, 0.95)
+        variables = list(ds.data_vars)
+        n_rows = len(variables) * 4
+        
+        if n_lags == "select_order":
+            n_lags = int((params.sizes["params"] - len(variables)) / len(variables))
+        legend_str = "VAR" if len(variables) > 1 else "AR"
+        legend_str += f"({n_lags}) model series"
 
-        if "member" in ts.dims:
-            ts_m = ts.mean("member")
-            ts_r = (ts.quantile(q[0], "member"), ts.quantile(q[1], "member"))
+        fig = plt.figure(figsize=(12, len(variables) * 14))
+
+        if "member" in ds.dims:
+            ds_m = ds.mean("member")
+            ds_r = (ds.quantile(q[0], "member"), ds.quantile(q[1], "member"))
         else:
-            ts_m = ts
+            ds_m = ds
 
         # Example timeseries
-        ax = fig.add_subplot(4, 1, 1)
+        idx = 1
         n_samp = 3
         expl = generate_samples(
             params,
-            scale,
-            n_times=len(ts),
+            n_times=ds.sizes["time"],
             n_samples=n_samp,
         )
-        expl.plot.line(ax=ax, x="time", label=f"AR({order}) model series")
-        if "member" in ts.dims:
-            ax.fill_between(
-                range(1, len(ts_m) + 1),
-                ts_r[0],
-                ts_r[1],
-                label="_nolabel_",
-                color="k",
-                edgecolor="none",
-                alpha=alpha,
+        for idx, v in enumerate(variables):
+            ax = fig.add_subplot(n_rows, 1, idx + 1)
+
+            expl[v].plot.line(
+                ax=ax,
+                x="time",
+                label=legend_str,
+                add_legend=False,
             )
-        ax.plot(range(1, len(ts_m) + 1), ts_m, label="Input timeseries", color="k")
-        ax.grid()
-        ax.set_xlabel("Time")
-        ax.set_title("Example fitted timeseries")
-        hand, lab = ax.get_legend_handles_labels()
-        ax.legend(handles=[hand[0], hand[-1]], labels=[lab[0], lab[-1]])
+            if "member" in ds.dims:
+                ax.fill_between(
+                    range(1, len(ds_m) + 1),
+                    ds_r[v][0],
+                    ds_r[v][1],
+                    label="_nolabel_",
+                    color="k",
+                    edgecolor="none",
+                    alpha=alpha,
+                )
+            ax.plot(
+                range(1, ds_m[v].sizes["time"] + 1),
+                ds_m[v],
+                label="Input timeseries",
+                color="k",
+            )
+            ax.grid()
+            ax.set_xlabel("Time")
+            if idx == 0:
+                ax.set_title("Example fitted timeseries")
+                ax.set_xlabel("")
+                hand, lab = ax.get_legend_handles_labels()
+                ax.legend(handles=[hand[0], hand[-1]], labels=[lab[0], lab[-1]])
+            else:
+                ax.set_title("")
 
         # Partial ACFs
-        ax = fig.add_subplot(4, 2, 3)
-        stats.acf(expl, partial=True).plot.line(
-            ax=ax, x="lag", label=f"AR({order}) model series", add_legend=False
-        )
-        ts_acf = stats.acf(ts, partial=True)
-        if "member" in ts_acf.dims:
-            ts_acf_r = (
-                ts_acf.quantile(q[0], "member"),
-                ts_acf.quantile(q[1], "member"),
+        idx_offset = 2 * len(variables)
+        for idx, v in enumerate(variables):
+            ax = fig.add_subplot(n_rows, 2, (len(variables) * idx) + idx_offset + 1)
+            stats.acf(expl[v], partial=True).plot.line(
+                ax=ax, x="lag", label=legend_str, add_legend=False
             )
-            ax.fill_between(
-                ts_acf.lag,
-                ts_acf_r[0],
-                ts_acf_r[1],
-                label="_nolabel_",
-                color="k",
-                edgecolor="none",
-                alpha=alpha,
-            )
-            ts_acf.mean("member").plot(ax=ax, label="Input timeseries", color="k")
-        else:
-            ts_acf.plot(ax=ax, label="Input timeseries", color="k")
-        ax.grid()
-        ax.set_xlabel("Lag")
-        ax.set_title("pACF")
-        hand, lab = ax.get_legend_handles_labels()
-        ax.legend(handles=[hand[0], hand[-1]], labels=[lab[0], lab[-1]])
+            ds_acf = stats.acf(ds[v], partial=True)
+            if "member" in ds_acf.dims:
+                ds_acf_r = (
+                    ds_acf.quantile(q[0], "member"),
+                    ds_acf.quantile(q[1], "member"),
+                )
+                ax.fill_between(
+                    ds_acf.lag,
+                    ds_acf_r[0],
+                    ds_acf_r[1],
+                    label="_nolabel_",
+                    color="k",
+                    edgecolor="none",
+                    alpha=alpha,
+                )
+                ds_acf.mean("member").plot(ax=ax, label="Input timeseries", color="k")
+            else:
+                ds_acf.plot(ax=ax, label="Input timeseries", color="k")
+            ax.grid()
+            if idx == 0:
+                ax.set_title("pACF")
+                ax.set_xlabel("")
+                hand, lab = ax.get_legend_handles_labels()
+                ax.legend(handles=[hand[0], hand[-1]], labels=[lab[0], lab[-1]])
+            else:
+                ax.set_title("")
+                ax.set_xlabel("Lag")
 
         # PDFs
-        ax = fig.add_subplot(4, 2, 4)
-        h, bin_edges = np.histogram(ts, bins=30, density=True)
-        for s in expl.sample:
-            ax.hist(
-                expl.sel(sample=s),
-                30,
-                alpha=0.6,
-                density=True,
-                label=f"AR({order}) model series",
+        for idx, v in enumerate(variables):
+            ax = fig.add_subplot(n_rows, 2, (len(variables) * idx) + idx_offset + 2)
+            h, bin_edges = np.histogram(ds[v], bins=30, density=True)
+            for s in expl.sample:
+                ax.hist(
+                    expl[v].sel(sample=s),
+                    30,
+                    alpha=0.6,
+                    density=True,
+                    label=legend_str,
+                )
+            ax.plot(
+                (bin_edges[:-1] + bin_edges[1:]) / 2,
+                h,
+                label="Input timeseries",
+                color="k",
             )
-        ax.plot(
-            (bin_edges[:-1] + bin_edges[1:]) / 2,
-            h,
-            label="Input timeseries",
-            color="k",
-        )
-        ax.grid()
-        ax.set_title("pdf")
-        hand, lab = ax.get_legend_handles_labels()
-        ax.legend(handles=[hand[0], hand[-1]], labels=[lab[0], lab[-1]])
+            ax.grid()
+            ax.set_ylabel(f"pdf({v})")
+            if idx == 0:
+                ax.set_title("pdf")
+                hand, lab = ax.get_legend_handles_labels()
+                ax.legend(handles=[hand[0], hand[-1]], labels=[lab[0], lab[-1]])
+            else:
+                ax.set_title("")
 
         # Example forecasts
-        ax = fig.add_subplot(4, 1, 3)
         n_leads = max(rolling_means) if rolling_means is not None else 10
         n_mem = n_members if n_members is not None else 50
         init = expl.isel(sample=0)
@@ -569,91 +607,106 @@ def generate_samples_like(
             init,
             n_leads,
             n_members=n_mem,
-            scale=scale,
         )
-        inits = fcst.init[::n_leads]
-        colors = [f"C{i}" for i in range(0, 10)]
-        colorcycler = cycle(colors)
-        label = True
-        for i in inits.values:
-            color = next(colorcycler)
+        for idx, v in enumerate(variables):
+            ax = fig.add_subplot(n_rows, 1, idx + idx_offset + 1)
 
-            if label:
-                lab = f"AR({order}) forecast"
+            inits = fcst[v].init[::n_leads]
+            colors = [f"C{i}" for i in range(0, 10)]
+            colorcycler = cycle(colors)
+            label = True
+            for i in inits.values:
+                color = next(colorcycler)
+
+                if label:
+                    lab = legend_str
+                else:
+                    lab = "__nolabel__"
+
+                q1 = fcst[v].sel(init=i).quantile(0.05, dim="member")
+                q2 = fcst[v].sel(init=i).quantile(0.95, dim="member")
+                ax.fill_between(
+                    range(i + 1, i + n_leads + 1),
+                    q1,
+                    q2,
+                    color=color,
+                    alpha=0.4,
+                    label=lab,
+                )
+                ax.plot(
+                    range(i + 1, i + n_leads + 1),
+                    fcst[v].sel(init=i).mean("member"),
+                    color=color,
+                )
+
+                label = False
+            ax.plot(init[v], label=legend_str, color="k")
+            ax.set_xlim(ds.sizes["time"] - min(ds.sizes["time"], 200), ds.sizes["time"])
+            ax.grid()
+            ax.set_ylabel(v)
+            if idx == 0:
+                ax.set_title("Example forecasts")
+                ax.set_xlabel("")
+                ax.legend()
             else:
-                lab = "__nolabel__"
-
-            q1 = fcst.sel(init=i).quantile(0.05, dim="member")
-            q2 = fcst.sel(init=i).quantile(0.95, dim="member")
-            ax.fill_between(
-                range(i + 1, i + n_leads + 1),
-                q1,
-                q2,
-                color=color,
-                alpha=0.4,
-                label=lab,
-            )
-            ax.plot(
-                range(i + 1, i + n_leads + 1),
-                fcst.sel(init=i).mean("member"),
-                color=color,
-            )
-
-            label = False
-        ax.plot(init, label=f"AR({order}) model series", color="k")
-        ax.set_xlim(len(ts) - min(len(ts), 200), len(ts))
-        ax.set_xlabel("Time")
-        ax.set_title("Example forecasts")
-        ax.legend()
-        ax.grid()
+                ax.set_title("")
+                ax.set_xlabel("Time")
 
         # Example outputs
-        ax = fig.add_subplot(4, 1, 4)
-        samples_plot = samples
-        ts_plot = ts_m
-        if "sample" in samples.dims:
-            samples_plot = samples_plot.isel(
-                sample=np.random.randint(0, high=len(samples_plot.sample))
-            )
+        idx_offset = 3 * len(variables)
+        for idx, v in enumerate(variables):
+            ax = fig.add_subplot(n_rows, 1, idx + idx_offset + 1)
+            samples_plot = samples[v]
+            ds_plot = ds_m[v]
+            if "sample" in samples.dims:
+                samples_plot = samples_plot.isel(
+                    sample=np.random.randint(0, high=len(samples_plot.sample))
+                )
 
-        if "rolling_mean" in samples.dims:
-            av = samples_plot.rolling_mean.values[-1]
-            samples_plot = samples_plot.sel(rolling_mean=av)
-            ts_plot = ts_plot.rolling({"time": av}, min_periods=av, center=False).mean(
-                "time"
-            )
+            if "rolling_mean" in samples.dims:
+                av = samples_plot.rolling_mean.values[-1]
+                samples_plot = samples_plot.sel(rolling_mean=av)
+                ds_plot = ds_plot.rolling(
+                    {"time": av}, min_periods=av, center=False
+                ).mean("time")
 
-        if "member" in samples.dims:
-            ax.fill_between(
-                samples_plot.time.values,
-                samples_plot.quantile(0.05, dim="member"),
-                samples_plot.quantile(0.95, dim="member"),
-                color="C0",
-                edgecolor="none",
-                alpha=0.4,
+            if "member" in samples.dims:
+                ax.fill_between(
+                    samples_plot.time.values,
+                    samples_plot.quantile(0.05, dim="member"),
+                    samples_plot.quantile(0.95, dim="member"),
+                    color="C0",
+                    edgecolor="none",
+                    alpha=0.4,
+                )
+                samples_plot.sel(member=1).plot(
+                    color="C0", linestyle="--", label="Simulated member 1"
+                )
+                samples_plot.mean("member").plot(
+                    color="C0", label="Simulated ensemble mean"
+                )
+            else:
+                samples_plot.plot()
+            if "member" in ds.dims:
+                lab = "Input timeseries, ensemble mean"
+            else:
+                lab = "Input timeseries"
+            ax.plot(
+                range(
+                    1, min(ds_plot.sizes["time"] + 1, samples_plot.sizes["time"] + 1)
+                ),
+                ds_plot.isel(time=slice(-samples_plot.sizes["time"], None)),
+                label=lab,
+                color="k",
             )
-            samples_plot.sel(member=1).plot(
-                color="C0", linestyle="--", label="Simulated member 1"
-            )
-            samples_plot.mean("member").plot(
-                color="C0", label="Simulated ensemble mean"
-            )
-        else:
-            samples_plot.plot()
-        if "member" in ts.dims:
-            lab = "Input timeseries, ensemble mean"
-        else:
-            lab = "Input timeseries"
-        ax.plot(
-            range(1, min(ts_plot.sizes["time"]+1, samples_plot.sizes["time"] + 1)),
-            ts_plot.isel(time=slice(-samples_plot.sizes["time"], None)),
-            label=lab,
-            color="k",
-        )
-        ax.legend()
-        ax.set_xlabel("Time")
-        ax.set_title(f"Example sample: {ax.get_title()}")
-        ax.grid()
+            ax.grid()
+            if idx == 0:
+                ax.legend()
+                ax.set_title(f"Example sample: {ax.get_title()}")
+                ax.set_xlabel("")
+            else:
+                ax.set_title("")
+                ax.set_xlabel("Time")
 
         fig.tight_layout()
 
