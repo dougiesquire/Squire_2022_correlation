@@ -4,6 +4,8 @@ import glob
 
 import dask
 
+import itertools
+
 import numpy as np
 import numpy.testing as npt
 
@@ -153,16 +155,26 @@ def interpolate_to_regular_grid(ds, resolution, add_area=True, ignore_degenerate
         return ds_rg
 
 
-def _cmip6_dcpp(
-    model, experiment, variant_id, grid, variables, realm, years, members, version
+def _open_cmip6(
+    model, experiment, variant_id, grid, variables, realm, members, version, dcpp_start_years=None
 ):
-    """Open CMIP6 dcpp variables from specified monthly realm"""
-
-    def _dcpp_file(y, m, v):
+    """
+    Open CMIP6 dcpp variable(s) from specified monthly realm
+    This works for experiment="historical", "piControl", "dcppA-hindcast" and "dcppB-forecast"
+    I haven't tried other experiments
+    """
+    
+    def _get_files(member, variable, dcpp_start_year=None):
+        """ Returns a list of the available cmip6 files """
+        if dcpp_start_year is None:
+            sub_experiment = f"r{member}{variant_id}"
+        else:
+            sub_experiment = f"s{dcpp_start_year}-r{member}{variant_id}"
+            
         path = (
-            f"{RAW_DATA_DIR}/{model}_{experiment}/s{y}-r{m}{variant_id}/"
-            f"{realm}/{v}/{grid}"
+            f"{RAW_DATA_DIR}/{model}_{experiment}/{sub_experiment}/{realm}/{variable}/{grid}"
         )
+        
         if version == "latest":
             versions = sorted(glob.glob(f"{path}/v????????"))
             if len(versions) == 0:
@@ -171,146 +183,96 @@ def _cmip6_dcpp(
                 path = versions[-1]
         else:
             path = f"{path}/{version}"
-
+            
         file_pattern = (
-            f"{v}_{realm}_{model}_{experiment}_s{y}-r{m}{variant_id}_{grid}_*.nc"
+            f"{variable}_{realm}_{model}_{experiment}_{sub_experiment}_{grid}_*.nc"
         )
         files = sorted(glob.glob(f"{path}/{file_pattern}"))
         if len(files) == 0:
             raise ValueError(f"No files found for {path}/{file_pattern}")
         else:
             return files
-
-    def _open_dcpp(y, m, v):
-        files = _dcpp_file(y, m, v)
+        
+    def _open(member, variable, dcpp_start_year=None):
+        """ Open the available cmip6 files """
+        files = _get_files(member, variable, dcpp_start_year)
         return xr.concat(
             [xr.open_dataset(f, chunks={}, use_cftime=True) for f in files],
             dim="time",
-        )[v]
-
-    def _open_dcpp_delayed(y, m, v, d0):
-        var_data = dask.delayed(_open_dcpp)(y, m, v).data
-        return dask.array.from_delayed(var_data, d0.shape, d0.dtype)
-
-    # Get init and lead coodinates (assumed same for all members and variables)
-    time = []
-    for idx, y in enumerate(years):
-        d0 = _open_dcpp(y, members[0], variables[0])
-        # Ensure calendars are all the same
-        if idx == 0:
-            calendar = d0.time.dt.calendar
-        time.append(d0.convert_calendar(calendar, use_cftime=True)["time"])
-    init = [t[0].item() for t in time]
-    d0 = convert_time_to_lead(d0.to_dataset(), time_freq="months")[variables[0]]
-
+        )[variable]
+    
+    def _open_delayed(member, variable, data_template, dcpp_start_year=None):
+        """ Dask delayed version of _open """
+        data = dask.delayed(_open)(member, variable, dcpp_start_year).data
+        return dask.array.from_delayed(data, data_template.shape, data_template.dtype)
+    
+    # Get a template for the data to be opened
+    if "dcpp" in experiment:
+        if dcpp_start_years is None:
+            raise ValueError(f"dcpp_start_years must be provided with experiment={experiment}")
+        years = dcpp_start_years
+        time = []
+        for idx, year in enumerate(years):
+            template = _open(members[0], variables[0], year)
+            # Force all calendars to be the same
+            if idx == 0:
+                calendar = template.time.dt.calendar
+            time.append(template.convert_calendar(calendar, use_cftime=True)["time"])
+        init = [t[0].item() for t in time]
+        template = convert_time_to_lead(template.to_dataset(), time_freq="months")[variables[0]]
+        
+        dims=["init", "member", *template.dims]
+        coords={
+            "member": members,
+            "init": init,
+            **template.coords,
+            "time": (["init", "lead"], time),
+        }
+    else:
+        years = [None]
+        template = _open(members[0], variables[0])
+        
+        dims=["member", *template.dims]
+        coords={
+            "member": members,
+            **template.coords,
+        }
+        
+    # Open all arrays
+    delayed = []
+    for variable, year in itertools.product(variables, years):
+        delayed.append(
+            dask.array.stack([_open_delayed(member, variable, template, year) for member in members], axis=0)
+        )
+        
+    # Split delayed into variables and concatenate into xarray DataArray
     ds = []
-    for v in variables:
-        delayed = []
-        for y in years:
-            delayed.append(
-                dask.array.stack(
-                    [_open_dcpp_delayed(y, m, v, d0) for m in members], axis=0
-                )
-            )
-        delayed = dask.array.stack(delayed, axis=0)
-
+    for n, variable in enumerate(variables):
+        delayed_variable = delayed[n*len(years):(n+1)*len(years)]
+        if "dcpp" in experiment:
+            delayed_variable = dask.array.stack(delayed_variable, axis=0) # Stack along init dimension
+        else:
+            delayed_variable = delayed_variable[0]
+        
         ds.append(
             xr.DataArray(
-                delayed,
-                dims=["init", "member", *d0.dims],
-                coords={
-                    "member": members,
-                    "init": init,
-                    **d0.coords,
-                    "time": (["init", "lead"], time),
-                },
-                attrs=d0.attrs,
-            ).to_dataset(name=v)
+                delayed_variable,
+                dims=dims,
+                coords=coords,
+                attrs=template.attrs,
+            ).to_dataset(name=variable)
         )
+        
     return xr.merge(ds).compute()
 
 
-def prepare_HadGEM3_dcpp_variable(variable, realm):
-    """
-    Open HadGEM3-GC31-MM dcpp variable from specified monthly realm, regrid to
-    a 1deg x 1deg regular grid and save as a zarr collection
-
-    Parameters
-    ----------
-    variable : str
-        The name of the variable to extract
-    realm : str
-        The name of the realm containing the variable
-    """
-    model = "HadGEM3-GC31-MM"
-    variant_id = "i1p1f2"
-    grid = "gn"
-    hindcast_years = range(1960, 2018 + 1)
-    forecast_years = range(2019, 2020 + 1)
-    members = range(1, 10 + 1)
-    version = "v20200???"
-    dcppA = _cmip6_dcpp(
-        model,
-        "dcppA-hindcast",
-        variant_id,
-        grid,
-        [variable],
-        realm,
-        hindcast_years,
-        members,
-        version,
-    )
-    dcppB = _cmip6_dcpp(
-        model,
-        "dcppB-forecast",
-        variant_id,
-        grid,
-        [variable],
-        realm,
-        forecast_years,
-        members,
-        version,
-    )
-    ds = xr.concat([dcppA, dcppB], dim="init")
-
-    # Add cell area
-    if realm == "Omon":
-        file = (
-            f"{RAW_DATA_DIR}/{model}_piControl/r1i1p1f1/Ofx/areacello/{grid}/v20200108/"
-            f"areacello_Ofx_{model}_piControl_r1i1p1f1_{grid}.nc"
-        )
-        rename = {"areacello": "area"}
-    elif realm == "Amon":
-        file = (
-            f"{RAW_DATA_DIR}/{model}_piControl/r1i1p1f1/fx/areacella/{grid}/v20200108/"
-            f"areacella_fx_{model}_piControl_r1i1p1f1_{grid}.nc"
-        )
-        rename = {"areacella": "area"}
-    else:
-        raise ValueError(f"I don't know where to find the area for realm: {realm}")
-    area = xr.open_dataset(file, chunks={}).rename(rename)
-    ds = ds.assign_coords(area)
-
-    # Interpolate to regular grid
-    ds = interpolate_to_regular_grid(ds, resolution=1.0)
-
-    save_as = f"{variable}_{realm}_{model}_dcpp"
-    chunks = {"init": -1, "member": -1, "lead": -1, "lat": 20, "lon": 20}
-    ds.chunk(chunks).to_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr", mode="w")
-
-    return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
-
-
-def prepare_EC_Earth3_dcpp_variable(variable, realm):
-    """
-    Open EC-Earth3 dcppA-hindcast variable from specified monthly realm, regrid to
-    a 1deg x 1deg regular grid and save as a zarr collection
-    """
-
+def _prepare_cmip(specs, area_file):
+    """ Prepare some CMIP data from a list of spec dictionaries """
+    
     def _fix_lat_lon(ds1, ds2):
         """
         Lat and lon values are not exactly the same to numerical precision
-        for different experiments
+        for different experiments for some models (e.g. EC-Earth3)
         """
         # Lat and lon values are not exactly the same to numerical precision
         # for ds and area
@@ -322,433 +284,553 @@ def prepare_EC_Earth3_dcpp_variable(variable, realm):
                     npt.assert_allclose(ds2[c].values, ds1[c].values, rtol=1e-06)
                     ds1 = ds1.assign_coords({c: ds2[c]})
         return ds1
-
-    model = "EC-Earth3"
-    variant_id = "i1p1f1"
-    grid = "gn" if realm == "Omon" else "gr"
-    years = range(1960, 2018 + 1)
-    members = range(1, 10 + 1)
-    version = "v2020121?"
-    ds = _cmip6_dcpp(
-        model,
-        "dcppA-hindcast",
-        variant_id,
-        grid,
-        [variable],
-        realm,
-        years,
-        members,
-        version,
-    )
-    # dcppB-forecast are on a different longitude grid
-
-    # Add cell area
-    if realm == "Omon":
-        file = (
-            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/"
-            f"Ofx/areacello/{grid}/v20200918/"
-            f"areacello_Ofx_{model}_historical_r1{variant_id}_{grid}.nc"
-        )
-        rename = {"areacello": "area"}
-    elif realm == "Amon":
-        file = (
-            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/"
-            f"fx/areacella/{grid}/v20210324/"
-            f"areacella_fx_{model}_historical_r1{variant_id}_{grid}.nc"
-        )
-        rename = {"areacella": "area"}
-    else:
-        raise ValueError(f"I don't know where to find the area for realm: {realm}")
-    area = xr.open_dataset(file, chunks={}).rename(rename)
-    area = _fix_lat_lon(area, ds)
+    
+    ds = []
+    for spec in specs:
+        ds.append(_open_cmip6(**spec))
+    ds = xr.combine_by_coords(ds, combine_attrs="drop_conflicts")
+    
+    ### Add cell area from hard-coded paths
+    area = xr.open_dataset(area_file, chunks={})
+    area = _fix_lat_lon(area.rename({list(area.data_vars)[0]: "area"}), ds)
     ds = ds.assign_coords(area)
 
     # Interpolate to regular grid
     ds = interpolate_to_regular_grid(ds, resolution=1.0)
+    
+    if "init" in ds.dims:
+        chunks = {"init": -1, "member": -1, "lead": -1, "lat": 20, "lon": 20}
+    else:
+        chunks = {"time": -1, "member": -1, "lat": 20, "lon": 20}
+        
+    return ds.chunk(chunks)
 
-    save_as = f"{variable}_{realm}_{model}_dcpp"
-    chunks = {"init": -1, "member": -1, "lead": -1, "lat": 20, "lon": 20}
-    ds.chunk(chunks).to_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr", mode="w")
 
-    return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
-
-
-def prepare_CanESM5_dcpp_variable(variable, realm):
+def prepare_HadGEM3(experiments, realm, variables, save_as=None):
     """
-    Open CanESM5 dcpp variable from specified monthly realm, regrid to
-    a 1deg x 1deg regular grid and save as a zarr collection
+    Open/save HadGEM3-GC31-MM from specified experiment(s) and monthly realm, 
+    regrid to a 1deg x 1deg regular grid and save as a zarr collection
 
     Parameters
     ----------
-    variable : str
-        The name of the variable to extract
+    experiments : list of str
+        The name(s) of the experiment(s) to open
     realm : str
-        The name of the realm containing the variable
+        The name of the realm containing the variable(s)
+    variables : list of str
+        The name(s) of the variable(s) to extract
+    save_as : str, optional
+        Filename to use to save the prepared data. If None, return the lazy
+        data
     """
-    model = "CanESM5"
-    variant_id = "i1p2f1"
-    grid = "gn"
-    hindcast_years = range(1960, 2019 + 1)
-    # Some of 2021 is available but some missing (e.g s2021-r34i1p2f1/Omon)
-    forecast_years = range(2020, 2020 + 1)
-    if variable == "psl":
-        members = range(1, 20 + 1)  # Only 20 psl members available for 1960 - 2016
-    else:
-        members = range(1, 40 + 1)
-    version = "v20190429"
-    dcppA = _cmip6_dcpp(
-        model,
-        "dcppA-hindcast",
-        variant_id,
-        grid,
-        [variable],
-        realm,
-        hindcast_years,
-        members,
-        version,
-    )
-    dcppB = _cmip6_dcpp(
-        model,
-        "dcppB-forecast",
-        variant_id,
-        grid,
-        [variable],
-        realm,
-        forecast_years,
-        members,
-        version,
-    )
-    ds = xr.concat([dcppA, dcppB], dim="init")
-
-    ### Add cell area
+    
+    # Hard-coded paths to take area from
     if realm == "Omon":
-        file = (
-            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/Ofx/areacello/{grid}/"
-            f"{version}/areacello_Ofx_{model}_historical_r1{variant_id}_{grid}.nc"
+        area_file = (
+            f"{RAW_DATA_DIR}/HadGEM3-GC31-MM_piControl/r1i1p1f1/Ofx/areacello/gn/v20200108/"
+            f"areacello_Ofx_HadGEM3-GC31-MM_piControl_r1i1p1f1_gn.nc"
         )
-        rename = {"areacello": "area"}
     elif realm == "Amon":
-        file = (
-            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/fx/areacella/{grid}/"
-            f"{version}/areacella_fx_{model}_historical_r1{variant_id}_{grid}.nc"
+        area_file = (
+            f"{RAW_DATA_DIR}/HadGEM3-GC31-MM_piControl/r1i1p1f1/fx/areacella/gn/v20200108/"
+            f"areacella_fx_HadGEM3-GC31-MM_piControl_r1i1p1f1_gn.nc"
         )
-        rename = {"areacella": "area"}
     else:
-        raise ValueError(f"I don't know where to find the area for realm: {realm}")
-    area = xr.open_dataset(file, chunks={}).rename(rename)
-    ds = ds.assign_coords(area)
-    print(ds)
+        raise ValueError("I don't (yet) support this realm")
+        
+    # Generate specs for different experiments
+    specs = []
+    for exp in experiments:
+        # Shared specs across experiments
+        exp_spec = dict(
+            model = "HadGEM3-GC31-MM",
+            grid = "gn",
+            version = "latest",
+            realm = realm,
+            variables = variables,
+            experiment = exp,
+        )
+        if exp == "dcppA-hindcast":
+            exp_spec["variant_id"] = "i1p1f2"
+            exp_spec["dcpp_start_years"] = range(1960, 2018 + 1)
+            exp_spec["members"] = range(1, 10 + 1)
+        elif exp == "dcppB-forecast":
+            exp_spec["variant_id"] = "i1p1f2"
+            # Some of 2021 is available but some is missing (e.g s2021-r34i1p2f1/Omon)
+            exp_spec["dcpp_start_years"] = range(2019, 2020 + 1)
+            exp_spec["members"] = range(1, 10 + 1)
+        elif exp == "historical":
+            exp_spec["variant_id"] = "i1p1f3"
+            exp_spec["dcpp_start_years"] = None
+            exp_spec["members"] = range(1, 4 + 1)
+        else:
+            raise ValueError("Please set up specs dict for this experiement")
+        specs.append(exp_spec)
+    
+    ds = _prepare_cmip(specs, area_file)
+    
+    if save_as is not None:
+        ds.to_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr", mode="w")
+        return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
+    else:
+        return ds
 
-    # Interpolate to regular grid
-    ds = interpolate_to_regular_grid(ds, resolution=1.0)
 
-    save_as = f"{variable}_{realm}_{model}_dcpp"
-    chunks = {"init": -1, "member": -1, "lead": -1, "lat": 20, "lon": 20}
-    ds.chunk(chunks).to_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr", mode="w")
-
-    return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
-
-
-def prepare_CESM1_1_CAM5_CMIP5_dcpp_variable(variable, realm):
+def prepare_EC_Earth3(experiments, realm, variables, save_as=None):
     """
-    Open CESM1.1-CAM5-CMIP5 dcpp variable from specified monthly realm, regrid to
-    a 1deg x 1deg regular grid and save as a zarr collection
+    Open/save EC-Earth3 variable(s) from specified experiment(s) and monthly realm, 
+    regrid to a 1deg x 1deg regular grid and save as a zarr collection
 
     Parameters
     ----------
-    variable : str
-        The name of the variable to extract
+    experiments : list of str
+        The name(s) of the experiment(s) to open
     realm : str
-        The name of the realm containing the variable
+        The name of the realm containing the variable(s)
+    variables : list of str
+        The name(s) of the variable(s) to extract
+    save_as : str, optional
+        Filename to use to save the prepared data. If None, return the lazy
+        data
     """
-    model = "CESM1-1-CAM5-CMIP5"
-    variant_id = "i1p1f1"
-    grid = "gn"
-    hindcast_years = range(1960, 2017 + 1)
-    # Some of 2021 is available but some missing (e.g s2021-r34i1p2f1/Omon)
-    members = range(1, 40 + 1)
-    version = "v201910??"
-    ds = _cmip6_dcpp(
-        model,
-        "dcppA-hindcast",
-        variant_id,
-        grid,
-        [variable],
-        realm,
-        hindcast_years,
-        members,
-        version,
-    )
-
-    ### Add cell area
+    
+    # Hard-coded paths to take area from
     if realm == "Omon":
-        file = (
-            f"{RAW_DATA_DIR}/CESM2_historical/r1{variant_id}/Ofx/areacello/{grid}/"
-            f"v20190308/areacello_Ofx_CESM2_historical_r1{variant_id}_{grid}.nc"
+        grid = "gn"
+        area_file = (
+            f"{RAW_DATA_DIR}/EC-Earth3_historical/r1i1p1f1/"
+            f"Ofx/areacello/gn/v20200918/"
+            f"areacello_Ofx_EC-Earth3_historical_r1i1p1f1_gn.nc"
         )
-        rename = {"areacello": "area"}
     elif realm == "Amon":
-        file = (
-            f"{RAW_DATA_DIR}/CESM2_historical/r1{variant_id}/fx/areacella/{grid}/"
-            f"v20190308/areacella_fx_CESM2_historical_r1{variant_id}_{grid}.nc"
+        grid = "gr"
+        area_file = (
+            f"{RAW_DATA_DIR}/EC-Earth3_historical/r1i1p1f1/"
+            f"fx/areacella/gr/v20210324/"
+            f"areacella_fx_EC-Earth3_historical_r1i1p1f1_gr.nc"
         )
-        rename = {"areacella": "area"}
     else:
-        raise ValueError(f"I don't know where to find the area for realm: {realm}")
-    area = xr.open_dataset(file, chunks={}).rename(rename)
-    ds = ds.assign_coords(area)
+        raise ValueError("I don't (yet) support this realm")
 
-    # Interpolate to regular grid
-    ds = interpolate_to_regular_grid(ds, resolution=1.0)
+    # Generate specs for different experiments
+    specs = []
+    for exp in experiments:
+        # Shared specs across experiments
+        exp_spec = dict(
+            model = "EC-Earth3",
+            variant_id = "i1p1f1",
+            members = range(1, 10 + 1),
+            grid = grid,
+            realm = realm,
+            variables = variables,
+            experiment = exp,
+        )
+        if exp == "dcppA-hindcast":
+            exp_spec["dcpp_start_years"] = range(1960, 2018 + 1)
+            exp_spec["version"] = "v2020121?"
+        elif exp == "historical":
+            exp_spec["dcpp_start_years"] = None
+            exp_spec["version"] = "v20200310"
+        else:
+            raise ValueError("Please set up specs dict for this experiement")
+        specs.append(exp_spec)
+    
+    ds = _prepare_cmip(specs, area_file)
+    
+    if save_as is not None:
+        ds.to_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr", mode="w")
+        return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
+    else:
+        return ds
 
-    save_as = f"{variable}_{realm}_{model}_dcpp"
-    chunks = {"init": -1, "member": -1, "lead": -1, "lat": 20, "lon": 20}
-    ds.chunk(chunks).to_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr", mode="w")
 
-    return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
-
-
-def prepare_MIROC6_dcpp_variable(variable, realm):
+def prepare_CanESM5(experiments, realm, variables, save_as=None):
     """
-    Open MIROC6 dcpp variable from specified monthly realm, regrid to
-    a 1deg x 1deg regular grid and save as a zarr collection
+    Open/save CanESM5 variable(s) from specified experiment(s) and monthly realm, 
+    regrid to a 1deg x 1deg regular grid and save as a zarr collection
 
     Parameters
     ----------
-    variable : str
-        The name of the variable to extract
+    experiments : list of str
+        The name(s) of the experiment(s) to open
     realm : str
-        The name of the realm containing the variable
+        The name of the realm containing the variable(s)
+    variables : list of str
+        The name(s) of the variable(s) to extract
+    save_as : str, optional
+        Filename to use to save the prepared data. If None, return the lazy
+        data
     """
-    model = "MIROC6"
-    variant_id = "i1p1f1"
-    grid = "gn"
-    hindcast_years = range(1960, 2021 + 1)
-    members = range(1, 10 + 1)
-    version = "v20??????"
-    ds = _cmip6_dcpp(
-        model,
-        "dcppA-hindcast",
-        variant_id,
-        grid,
-        [variable],
-        realm,
-        hindcast_years,
-        members,
-        version,
-    )
-
-    ### Add cell area
+    
+    # Hard-coded paths to take area from
     if realm == "Omon":
-        file = (
-            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/Ofx/areacello/{grid}/"
-            f"v20190311/areacello_Ofx_{model}_historical_r1{variant_id}_{grid}.nc"
+        area_file = (
+            f"{RAW_DATA_DIR}/CanESM5_historical/r1i1p2f1/Ofx/areacello/gn/"
+            f"v20190429/areacello_Ofx_CanESM5_historical_r1i1p2f1_gn.nc"
         )
-        rename = {"areacello": "area"}
     elif realm == "Amon":
-        file = (
-            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/fx/areacella/{grid}/"
-            f"v20190311/areacella_fx_{model}_historical_r1{variant_id}_{grid}.nc"
+        area_file = (
+            f"{RAW_DATA_DIR}/CanESM5_historical/r1i1p2f1/fx/areacella/gn/"
+            f"v20190429/areacella_fx_CanESM5_historical_r1i1p2f1_gn.nc"
         )
-        rename = {"areacella": "area"}
     else:
-        raise ValueError(f"I don't know where to find the area for realm: {realm}")
-    area = xr.open_dataset(file, chunks={}).rename(rename)
-    ds = ds.assign_coords(area)
+        raise ValueError("I don't (yet) support this realm")
+        
+    # Generate specs for different experiments
+    specs = []
+    for exp in experiments:
+        # Shared specs across experiments
+        exp_spec = dict(
+            model = "CanESM5",
+            grid = "gn",
+            version = "v20190429",
+            variant_id = "i1p2f1",
+            realm = realm,
+            variables = variables,
+            experiment = exp,
+        )
+        if exp == "dcppA-hindcast":
+            exp_spec["dcpp_start_years"] = range(1960, 2019 + 1)
+              # Only 20 psl members available for 1960 - 2016
+            exp_spec["members"] = range(1, 20 + 1)
+        elif exp == "dcppB-forecast":
+            exp_spec["dcpp_start_years"] = range(2020, 2020 + 1)
+              # Reduce members to match dcppA-hindcast
+            exp_spec["members"] = range(1, 20 + 1)
+        elif exp == "historical":
+            exp_spec["dcpp_start_years"] = None
+            exp_spec["members"] = range(1, 40 + 1)
+        else:
+            raise ValueError("Please set up specs dict for this experiement")
+        specs.append(exp_spec)
+    
+    ds = _prepare_cmip(specs, area_file)
+    
+    if save_as is not None:
+        ds.to_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr", mode="w")
+        return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
+    else:
+        return ds
 
-    # Interpolate to regular grid
-    ds = interpolate_to_regular_grid(ds, resolution=1.0)
 
-    save_as = f"{variable}_{realm}_{model}_dcpp"
-    chunks = {"init": -1, "member": -1, "lead": -1, "lat": 20, "lon": 20}
-    ds.chunk(chunks).to_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr", mode="w")
-
-    return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
-
-
-def prepare_MPI_ESM1_2_HR_dcpp_variable(variable, realm):
+def prepare_CESM1_1_CAM5_CMIP5(experiments, realm, variables, save_as=None):
     """
-    Open MPI-ESM1.2-HR dcpp variable from specified monthly realm, regrid to
-    a 1deg x 1deg regular grid and save as a zarr collection
+    Open/save CESM1_1_CAM5_CMIP5 variable(s) from specified experiment(s)
+    and monthly realm, regrid to a 1deg x 1deg regular grid and save as a
+    zarr collection
 
     Parameters
     ----------
-    variable : str
-        The name of the variable to extract
+    experiments : list of str
+        The name(s) of the experiment(s) to open
     realm : str
-        The name of the realm containing the variable
+        The name of the realm containing the variable(s)
+    variables : list of str
+        The name(s) of the variable(s) to extract
+    save_as : str, optional
+        Filename to use to save the prepared data. If None, return the lazy
+        data
     """
-    model = "MPI-ESM1-2-HR"
-    variant_id = "i1p1f1"
-    grid = "gn"
-    hindcast_years = range(1960, 2018 + 1)
-    members = range(1, 10 + 1)
-    version = "v20??????"
-    ds = _cmip6_dcpp(
-        model,
-        "dcppA-hindcast",
-        variant_id,
-        grid,
-        [variable],
-        realm,
-        hindcast_years,
-        members,
-        version,
-    )
-
-    ### Add cell area
+    
+    # Hard-coded paths to take area from
     if realm == "Omon":
-        file = (
-            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/Ofx/areacello/{grid}/"
-            f"v20190710/areacello_Ofx_{model}_historical_r1{variant_id}_{grid}.nc"
+        area_file = (
+             f"{RAW_DATA_DIR}/CESM2_historical/r1i1p1f1/Ofx/areacello/gn/"
+            f"v20190308/areacello_Ofx_CESM2_historical_r1i1p1f1_gn.nc"
         )
-        rename = {"areacello": "area"}
     elif realm == "Amon":
-        file = (
-            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/fx/areacella/{grid}/"
-            f"v20190710/areacella_fx_{model}_historical_r1{variant_id}_{grid}.nc"
+        area_file = (
+            f"{RAW_DATA_DIR}/CESM2_historical/r1i1p1f1/fx/areacella/gn/"
+            f"v20190308/areacella_fx_CESM2_historical_r1i1p1f1_gn.nc"
         )
-        rename = {"areacella": "area"}
     else:
-        raise ValueError(f"I don't know where to find the area for realm: {realm}")
-    area = xr.open_dataset(file, chunks={}).rename(rename)
-    ds = ds.assign_coords(area)
+        raise ValueError("I don't (yet) support this realm")
 
-    # Interpolate to regular grid
-    ds = interpolate_to_regular_grid(ds, resolution=1.0)
-
-    save_as = f"{variable}_{realm}_{model}_dcpp"
-    chunks = {"init": -1, "member": -1, "lead": -1, "lat": 20, "lon": 20}
-    ds.chunk(chunks).to_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr", mode="w")
-
-    return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
-
-
-def prepare_IPSL_CM6A_LR_dcpp_variable(variable, realm):
-    """
-    Open IPSL-CM6A-LR dcpp variable from specified monthly realm, regrid to
-    a 1deg x 1deg regular grid and save as a zarr collection
-
-    Parameters
-    ----------
-    variable : str
-        The name of the variable to extract
-    realm : str
-        The name of the realm containing the variable
-    """
-    model = "IPSL-CM6A-LR"
-    variant_id = "i1p1f1"
-    grid = "gn" if realm == "Omon" else "gr"
-    hindcast_years = range(1960, 2016 + 1)
-    members = range(1, 10 + 1)
-    version = "v20200108"
-    ds = _cmip6_dcpp(
-        model,
-        "dcppA-hindcast",
-        variant_id,
-        grid,
-        [variable],
-        realm,
-        hindcast_years,
-        members,
-        version,
-    )
-
-    ### Add cell area (already present for Omon)
-    if realm == "Amon":
-        file = (
-            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id}/fx/areacella/{grid}/"
-            f"v20180803/areacella_fx_{model}_historical_r1{variant_id}_{grid}.nc"
+    # Generate specs for different experiments
+    specs = []
+    for exp in experiments:
+        # Shared specs across experiments
+        exp_spec = dict(
+            model = "CESM1-1-CAM5-CMIP5",
+            grid = "gn",
+            variant_id = "i1p1f1",
+            version = "v201910??",
+            realm = realm,
+            variables = variables,
+            experiment = exp,
         )
-        rename = {"areacella": "area"}
+        if exp == "dcppA-hindcast":
+            exp_spec["dcpp_start_years"] = range(1960, 2017 + 1)
+            exp_spec["members"] = range(1, 40 + 1)
+        else:
+            raise ValueError("Please set up specs dict for this experiement")
+        specs.append(exp_spec)
+    
+    ds = _prepare_cmip(specs, area_file)
+    
+    if save_as is not None:
+        ds.to_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr", mode="w")
+        return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
+    else:
+        return ds
 
-        area = xr.open_dataset(file, chunks={}).rename(rename)
-        ds = ds.assign_coords(area)
-    elif realm != "Omon":
-        raise ValueError(f"I don't know where to find the area for realm: {realm}")
 
-    # Interpolate to regular grid
-    ds = interpolate_to_regular_grid(ds, resolution=1.0)
-
-    save_as = f"{variable}_{realm}_{model}_dcpp"
-    chunks = {"init": -1, "member": -1, "lead": -1, "lat": 20, "lon": 20}
-    ds.chunk(chunks).to_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr", mode="w")
-
-    return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
-
-
-def prepare_NorCPM1_dcpp_variable(variable, realm):
+def prepare_MIROC6(experiments, realm, variables, save_as=None):
     """
-    Open NorCPM1 dcpp variable from specified monthly realm, regrid to
-    a 1deg x 1deg regular grid and save as a zarr collection
+    Open/save MIROC6 variable(s) from specified experiment(s)
+    and monthly realm, regrid to a 1deg x 1deg regular grid and save as a
+    zarr collection
 
     Parameters
     ----------
-    variable : str
-        The name of the variable to extract
+    experiments : list of str
+        The name(s) of the experiment(s) to open
     realm : str
-        The name of the realm containing the variable
+        The name of the realm containing the variable(s)
+    variables : list of str
+        The name(s) of the variable(s) to extract
+    save_as : str, optional
+        Filename to use to save the prepared data. If None, return the lazy
+        data
     """
-    model = "NorCPM1"
-    variant_id_i1 = "i1p1f1"
-    variant_id_i2 = "i2p1f1"
-    grid = "gn"
-    hindcast_years = range(1960, 2018 + 1)
-    members = range(1, 10 + 1)
-    version = "latest"
-    ds_i1 = _cmip6_dcpp(
-        model,
-        "dcppA-hindcast",
-        variant_id_i1,
-        grid,
-        [variable],
-        realm,
-        hindcast_years,
-        members,
-        version,
-    )
-    ds_i2 = _cmip6_dcpp(
-        model,
-        "dcppA-hindcast",
-        variant_id_i2,
-        grid,
-        [variable],
-        realm,
-        hindcast_years,
-        members,
-        version,
-    )
-    ds = xr.concat(
-        [ds_i1, ds_i2.assign_coords({"member": ds_i2.member + len(members)})],
-        dim="member",
-    )
-
-    ### Add cell area
+    
+    # Hard-coded paths to take area from
     if realm == "Omon":
-        file = (
-            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id_i1}/Ofx/areacello/{grid}/"
-            f"v20200724/areacello_Ofx_{model}_historical_r1{variant_id_i1}_{grid}.nc"
+        area_file = (
+            f"{RAW_DATA_DIR}/MIROC6_historical/r1i1p1f1/Ofx/areacello/gn/"
+            f"v20190311/areacello_Ofx_MIROC6_historical_r1i1p1f1_gn.nc"
         )
-        rename = {"areacello": "area"}
     elif realm == "Amon":
-        file = (
-            f"{RAW_DATA_DIR}/{model}_historical/r1{variant_id_i1}/fx/areacella/{grid}/"
-            f"v20200724/areacella_fx_{model}_historical_r1{variant_id_i1}_{grid}.nc"
+        area_file = (
+            f"{RAW_DATA_DIR}/MIROC6_historical/r1i1p1f1/fx/areacella/gn/"
+            f"v20190311/areacella_fx_MIROC6_historical_r1i1p1f1_gn.nc"
         )
-        rename = {"areacella": "area"}
     else:
-        raise ValueError(f"I don't know where to find the area for realm: {realm}")
-    area = xr.open_dataset(file, chunks={}).rename(rename)
-    ds = ds.assign_coords(area)
+        raise ValueError("I don't (yet) support this realm")
+        
 
-    # Interpolate to regular grid
-    ds = interpolate_to_regular_grid(ds, resolution=1.0)
+    # Generate specs for different experiments
+    specs = []
+    for exp in experiments:
+        # Shared specs across experiments
+        exp_spec = dict(
+            model = "MIROC6",
+            grid = "gn",
+            version = "v20??????",
+            variant_id = "i1p1f1",
+            members = range(1, 10 + 1),
+            realm = realm,
+            variables = variables,
+            experiment = exp,
+        )
+        if exp == "dcppA-hindcast":
+            exp_spec["dcpp_start_years"] = range(1960, 2021 + 1)
+        elif exp == "historical":
+            exp_spec["dcpp_start_years"] = None
+        else:
+            raise ValueError("Please set up specs dict for this experiement")
+        specs.append(exp_spec)
+    
+    ds = _prepare_cmip(specs, area_file)
+    
+    if save_as is not None:
+        ds.to_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr", mode="w")
+        return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
+    else:
+        return ds
 
-    save_as = f"{variable}_{realm}_{model}_dcpp"
-    chunks = {"init": -1, "member": -1, "lead": -1, "lat": 20, "lon": 20}
-    ds.chunk(chunks).to_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr", mode="w")
 
-    return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
+def prepare_MPI_ESM1_2_HR(experiments, realm, variables, save_as=None):
+    """
+    Open/save MPI-ESM1-2-HR variable(s) from specified experiment(s)
+    and monthly realm, regrid to a 1deg x 1deg regular grid and save as a
+    zarr collection
+
+    Parameters
+    ----------
+    experiments : list of str
+        The name(s) of the experiment(s) to open
+    realm : str
+        The name of the realm containing the variable(s)
+    variables : list of str
+        The name(s) of the variable(s) to extract
+    save_as : str, optional
+        Filename to use to save the prepared data. If None, return the lazy
+        data
+    """
+    
+    # Hard-coded paths to take area from
+    if realm == "Omon":
+        area_file = (
+            f"{RAW_DATA_DIR}/MPI-ESM1-2-HR_historical/r1i1p1f1/Ofx/areacello/gn/"
+            f"v20190710/areacello_Ofx_MPI-ESM1-2-HR_historical_r1i1p1f1_gn.nc"
+        )
+    elif realm == "Amon":
+        area_file = (
+            f"{RAW_DATA_DIR}/MPI-ESM1-2-HR_historical/r1i1p1f1/fx/areacella/gn/"
+            f"v20190710/areacella_fx_MPI-ESM1-2-HR_historical_r1i1p1f1_gn.nc"
+        )
+    else:
+        raise ValueError("I don't (yet) support this realm")
+        
+    # Generate specs for different experiments
+    specs = []
+    for exp in experiments:
+        # Shared specs across experiments
+        exp_spec = dict(
+            model = "MPI-ESM1-2-HR",
+            grid = "gn",
+            version = "v20??????",
+            variant_id = "i1p1f1",
+            members = range(1, 10 + 1),
+            realm = realm,
+            variables = variables,
+            experiment = exp,
+        )
+        if exp == "dcppA-hindcast":
+            exp_spec["dcpp_start_years"] = range(1960, 2018 + 1)
+        elif exp == "historical":
+            exp_spec["dcpp_start_years"] = None
+        else:
+            raise ValueError("Please set up specs dict for this experiement")
+        specs.append(exp_spec)
+    
+    ds = _prepare_cmip(specs, area_file)
+    
+    if save_as is not None:
+        ds.to_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr", mode="w")
+        return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
+    else:
+        return ds
+
+
+def prepare_IPSL_CM6A_LR(experiments, realm, variables, save_as=None):
+    """
+    Open/save IPSL-CM6A-LR variable(s) from specified experiment(s)
+    and monthly realm, regrid to a 1deg x 1deg regular grid and save as a
+    zarr collection
+
+    Parameters
+    ----------
+    experiments : list of str
+        The name(s) of the experiment(s) to open
+    realm : str
+        The name of the realm containing the variable(s)
+    variables : list of str
+        The name(s) of the variable(s) to extract
+    save_as : str, optional
+        Filename to use to save the prepared data. If None, return the lazy
+        data
+    """
+    
+    # Hard-coded paths to take area (area already present for Omon)
+    if realm == "Omon":
+        grid = "gn"
+    elif realm == "Amon":
+        grid = "gr"
+        area_file = (
+            f"{RAW_DATA_DIR}/IPSL-CM6A-LR_historical/r1i1p1f1/fx/areacella/{grid}/"
+            f"v20180803/areacella_fx_IPSL-CM6A-LR_historical_r1i1p1f1_{grid}.nc"
+        )
+    else:
+        raise ValueError("I don't (yet) support this realm")
+        
+    # Generate specs for different experiments
+    specs = []
+    for exp in experiments:
+        # Shared specs across experiments
+        exp_spec = dict(
+            model = "IPSL-CM6A-LR",
+            variant_id = "i1p1f1",
+            members = range(1, 10 + 1),
+            grid = grid,
+            realm = realm,
+            variables = variables,
+            experiment = exp,
+        )
+        if exp == "dcppA-hindcast":
+            exp_spec["dcpp_start_years"] = range(1960, 2016 + 1)
+            exp_spec["version"] = "v20200108"
+        elif exp == "historical":
+            exp_spec["dcpp_start_years"] = None
+            exp_spec["version"] = "v20180803"
+        else:
+            raise ValueError("Please set up specs dict for this experiement")
+        specs.append(exp_spec)
+    
+    ds = _prepare_cmip(specs, area_file)
+    
+    if save_as is not None:
+        ds.to_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr", mode="w")
+        return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
+    else:
+        return ds
+
+
+def prepare_NorCPM1(experiments, realm, variables, save_as=None):
+    """
+    Open/save NorCPM1 from specified experiment(s) and monthly realm, 
+    regrid to a 1deg x 1deg regular grid and save as a zarr collection
+
+    Parameters
+    ----------
+    experiments : list of str
+        The name(s) of the experiment(s) to open
+    realm : str
+        The name of the realm containing the variable(s)
+    variables : list of str
+        The name(s) of the variable(s) to extract
+    save_as : str, optional
+        Filename to use to save the prepared data. If None, return the lazy
+        data
+    """
+    
+    # Hard-coded paths to take area from
+    if realm == "Omon":
+        area_file = (
+            f"{RAW_DATA_DIR}/NorCPM1_historical/r1i1p1f1/Ofx/areacello/gn/"
+            f"v20200724/areacello_Ofx_NorCPM1_historical_r1i1p1f1_gn.nc"
+        )
+    elif realm == "Amon":
+        area_file = (
+            f"{RAW_DATA_DIR}/NorCPM1_historical/r1i1p1f1/fx/areacella/gn/"
+            f"v20200724/areacella_fx_NorCPM1_historical_r1i1p1f1_gn.nc"
+        )
+    else:
+        raise ValueError("I don't (yet) support this realm")
+        
+    # Generate specs for different experiments
+    specs = []
+    for exp in experiments:
+        # Shared specs across experiments
+        exp_spec = dict(
+            model = "NorCPM1",
+            grid = "gn",
+            version = "latest",
+            realm = realm,
+            variables = variables,
+            experiment = exp,
+        )
+        if exp == "dcppA-hindcast":
+            # 10 members of i2p1f1 also exist
+            exp_spec["variant_id"] = "i1p1f1"
+            exp_spec["dcpp_start_years"] = range(1960, 2018 + 1)
+            exp_spec["members"] = range(1, 10 + 1)
+        elif exp == "historical":
+            exp_spec["variant_id"] = "i1p1f1"
+            exp_spec["dcpp_start_years"] = None
+            exp_spec["members"] = range(1, 30 + 1)
+        else:
+            raise ValueError("Please set up specs dict for this experiement")
+        specs.append(exp_spec)
+    
+    ds = _prepare_cmip(specs, area_file)
+    
+    if save_as is not None:
+        ds.to_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr", mode="w")
+        return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
+    else:
+        return ds
 
 
 def prepare_HadSLP2r():
