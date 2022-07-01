@@ -166,6 +166,8 @@ def fit(
     param_labels = [
         f"{v}.lag{lag}" for lag in range(1, n_lags + 1) for v in variables
     ] + [f"{v}.noise_var" for v in variables]
+    model_order = ((params[list(params.data_vars)[0]].count("params") - len(variables)) / len(variables)).astype(int)
+    params = params.assign_coords({"model_order": model_order})
     params = params.assign_coords({"params": param_labels}).dropna("params", how="all")
     return params
 
@@ -276,7 +278,7 @@ def generate_samples(params, n_times, n_samples, n_members=None, rolling_means=N
     if rolling_means is not None:
         if n_members is not None:
             res = [s.sel(lead=1, drop=True).assign_coords({"rolling_mean": 1})]
-            for av in rolling_means:
+            for av in rolling_means:    
                 rm = s.sel(lead=slice(1, av)).mean("lead")
                 rm = rm.assign_coords({"rolling_mean": av})
                 res.append(rm)
@@ -431,7 +433,7 @@ def generate_samples_like(
     n_members=None,
     rolling_means=None,
     fit_kwargs={},
-    plot_diagnostics=True,
+    plot_diagnostics=True
 ):
     """
     Convenience function for generating samples from a AR process fitted to
@@ -468,9 +470,8 @@ def generate_samples_like(
     params = fit(ds, n_lags=n_lags, kwargs=fit_kwargs)
     if "member" in params.dims:
         # Use the most common order and average params across members
-        n_lags = stats.mode(params.n_lags, dim="member").compute().item()
+        n_lags = stats.mode(params.model_order, dim="member").compute().item()
         params = fit(ds, n_lags=n_lags).mean("member")
-
     samples = generate_samples(
         params,
         n_times=n_times,
@@ -517,9 +518,9 @@ def generate_samples_like(
             )
             if "member" in ds.dims:
                 ax.fill_between(
-                    range(1, len(ds_m) + 1),
-                    ds_r[v][0],
-                    ds_r[v][1],
+                    range(1, len(ds_m[v]) + 1),
+                    ds_r[0][v],
+                    ds_r[1][v],
                     label="_nolabel_",
                     color="k",
                     edgecolor="none",
@@ -531,7 +532,7 @@ def generate_samples_like(
                 label="Input timeseries",
                 color="k",
             )
-            ax.grid()
+            ax.grid(True)
             ax.set_xlabel("Time")
             if idx == 0:
                 ax.set_title("Example fitted timeseries")
@@ -566,7 +567,7 @@ def generate_samples_like(
                 ds_acf.mean("member").plot(ax=ax, label="Input timeseries", color="k")
             else:
                 ds_acf.plot(ax=ax, label="Input timeseries", color="k")
-            ax.grid()
+            ax.grid(True)
             if idx == 0:
                 ax.set_title("pACF")
                 ax.set_xlabel("")
@@ -594,7 +595,7 @@ def generate_samples_like(
                 label="Input timeseries",
                 color="k",
             )
-            ax.grid()
+            ax.grid(True)
             ax.set_ylabel(f"pdf({v})")
             if idx == 0:
                 ax.set_title("pdf")
@@ -647,7 +648,7 @@ def generate_samples_like(
                 label = False
             ax.plot(init[v], label=legend_str, color="k")
             ax.set_xlim(ds.sizes["time"] - min(ds.sizes["time"], 200), ds.sizes["time"])
-            ax.grid()
+            ax.grid(True)
             ax.set_ylabel(v)
             if idx == 0:
                 ax.set_title("Example forecasts")
@@ -704,7 +705,7 @@ def generate_samples_like(
                 label=lab,
                 color="k",
             )
-            ax.grid()
+            ax.grid(True)
             if idx == 0:
                 ax.legend()
                 ax.set_title(f"Example sample: {ax.get_title()}")

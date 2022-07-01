@@ -18,26 +18,26 @@ def main():
     logger.info("Spinning up a dask cluster")
     local_directory = tempfile.TemporaryDirectory()
     with Client(processes=False, local_directory=local_directory.name):
-        # logger.info("Preparing HadGEM3 data")
-        # _ = data.prepare_HadGEM3(
+        logger.info("Preparing HadGEM3-GC31-MM data")
+        # _ = data.prepare_HadGEM3_GC31_MM(
         #     ["dcppA-hindcast", "dcppB-forecast"], 
         #     "Amon", 
         #     ["psl"],
         #     "psl_Amon_HadGEM3-GC31-MM_dcpp"
         # )
-        # _ = data.prepare_HadGEM3(
+        # _ = data.prepare_HadGEM3_GC31_MM(
         #     ["historical"], 
         #     "Amon", 
         #     ["psl"],
         #     "psl_Amon_HadGEM3-GC31-MM_historical"
         # )
-        # _ = data.prepare_HadGEM3(
+        # _ = data.prepare_HadGEM3_GC31_MM(
         #     ["dcppA-hindcast", "dcppB-forecast"], 
         #     "Omon", 
         #     ["tos"],
         #     "tos_Omon_HadGEM3-GC31-MM_dcpp"
         # )
-        # _ = data.prepare_HadGEM3(
+        # _ = data.prepare_HadGEM3_GC31_MM(
         #     ["historical"], 
         #     "Omon", 
         #     ["tos"],
@@ -51,12 +51,13 @@ def main():
         #     ["psl"],
         #     "psl_Amon_EC-Earth3_dcpp"
         # )
-        # _ = data.prepare_EC_Earth3(
-        #     ["historical"], 
-        #     "Amon", 
-        #     ["psl"],
-        #     "psl_Amon_EC-Earth3_historical"
-        # )
+        # # DATA REPLICATION REQUEST IN
+        # # _ = data.prepare_EC_Earth3(
+        # #     ["historical"], 
+        # #     "Amon", 
+        # #     ["psl"],
+        # #     "psl_Amon_EC-Earth3_historical"
+        # # )
         # _ = data.prepare_EC_Earth3(
         #     ["dcppA-hindcast"], 
         #     "Omon", 
@@ -70,25 +71,33 @@ def main():
         #     "tos_Omon_EC-Earth3_historical"
         # )
 
-        # logger.info("Preparing CanESM5 data")
-        # _ = data.prepare_CanESM5(
-        #     ["dcppA-hindcast", "dcppB-forecast"], 
-        #     "Amon", 
-        #     ["psl"],
-        #     "psl_Amon_CanESM5_dcpp"
-        # )
+        logger.info("Preparing CanESM5 data")
+        _ = data.prepare_CanESM5(
+            ["dcppA-hindcast", "dcppB-forecast"], 
+            "Amon", 
+            ["psl"],
+            "psl_Amon_CanESM5_dcpp"
+        )
+        # DATA REPLICATION REQUEST IN
         # _ = data.prepare_CanESM5(
         #     ["historical"], 
         #     "Amon", 
         #     ["psl"],
         #     "psl_Amon_CanESM5_historical"
         # )
-        # _ = data.prepare_CanESM5(
-        #     ["historical"], 
-        #     "Omon", 
-        #     ["tos"],
-        #     "tos_Omon_CanESM5_historical"
-        # )
+        # REQUIRES hugemem NODE
+        _ = data.prepare_CanESM5(
+            ["dcppA-hindcast", "dcppB-forecast"], 
+            "Omon", 
+            ["tos"],
+            "tos_Omon_CanESM5_dcpp"
+        )
+        _ = data.prepare_CanESM5(
+            ["historical"], 
+            "Omon", 
+            ["tos"],
+            "tos_Omon_CanESM5_historical"
+        )
 
         # logger.info("Preparing CESM1.1 data")
         # _ = data.prepare_CESM1_1_CAM5_CMIP5(
@@ -97,6 +106,14 @@ def main():
         #     ["psl"],
         #     "psl_Amon_CESM1-1-CAM5-CMIP5_dcpp"
         # )
+        # REQUIRES hugemem NODE
+        # _ = data.prepare_CESM1_1_CAM5_CMIP5(
+        #     ["dcppA-hindcast"], 
+        #     "Omon", 
+        #     ["tos"],
+        #     "tod_Omon_CESM1-1-CAM5-CMIP5_dcpp"
+        # )
+        # # NO HISTORICAL RUN
 
         # logger.info("Preparing MIROC6 data")
         # _ = data.prepare_MIROC6(
@@ -105,12 +122,13 @@ def main():
         #     ["psl"],
         #     "psl_Amon_MIROC6_dcpp"
         # )
-        # _ = data.prepare_MIROC6(
-        #     ["historical"], 
-        #     "Amon", 
-        #     ["psl"],
-        #     "psl_Amon_MIROC6_historical"
-        # )
+        # # DATA REPLICATION REQUEST IN
+        # # _ = data.prepare_MIROC6(
+        # #     ["historical"], 
+        # #     "Amon", 
+        # #     ["psl"],
+        # #     "psl_Amon_MIROC6_historical"
+        # # )
         # _ = data.prepare_MIROC6(
         #     ["dcppA-hindcast"], 
         #     "Omon", 
@@ -131,11 +149,19 @@ def main():
         #     ["psl"],
         #     "psl_Amon_MPI-ESM1-2-HR_dcpp"
         # )
+        # # DATA REPLICATION REQUEST IN
+        # # _ = data.prepare_MPI_ESM1_2_HR(
+        # #     ["historical"], 
+        # #     "Amon", 
+        # #     ["psl"],
+        # #     "psl_Amon_MPI-ESM1-2-HR_historical"
+        # # )
+        # REQUIRES hugemem NODE
         # _ = data.prepare_MPI_ESM1_2_HR(
-        #     ["historical"], 
-        #     "Amon", 
-        #     ["psl"],
-        #     "psl_Amon_MPI-ESM1-2-HR_historical"
+        #     ["dcppA-hindcast"], 
+        #     "Omon", 
+        #     ["tos"],
+        #     "tos_Omon_MPI-ESM1-2-HR_dcpp"
         # )
         # _ = data.prepare_MPI_ESM1_2_HR(
         #     ["historical"], 
@@ -151,44 +177,55 @@ def main():
         #     ["psl"],
         #     "psl_Amon_IPSL-CM6A-LR_dcpp"
         # )
+        # # DATA REPLICATION REQUEST IN
+        # # _ = data.prepare_IPSL_CM6A_LR(
+        # #     ["historical"], 
+        # #     "Amon", 
+        # #     ["psl"],
+        # #     "psl_Amon_IPSL-CM6A-LR_historical"
+        # # )
+        # REQUIRES hugemem NODE
         # _ = data.prepare_IPSL_CM6A_LR(
-        #     ["historical"], 
-        #     "Amon", 
-        #     ["psl"],
-        #     "psl_Amon_IPSL-CM6A-LR_historical"
-        # )
-        # _ = data.prepare_IPSL_CM6A_LR(
-        #     ["historical"], 
+        #     ["dcppA-hindcast"], 
         #     "Omon", 
         #     ["tos"],
-        #     "tos_Omon_IPSL-CM6A-LR_historical"
+        #     "tos_Omon_IPSL-CM6A-LR_dcpp"
         # )
+        # # DATA REPLICATION REQUEST IN
+        # # _ = data.prepare_IPSL_CM6A_LR(
+        # #     ["historical"], 
+        # #     "Omon", 
+        # #     ["tos"],
+        # #     "tos_Omon_IPSL-CM6A-LR_historical"
+        # # )
 
-        logger.info("Preparing NorCPM1")
-        _ = data.prepare_NorCPM1(
-            ["dcppA-hindcast"], 
-            "Amon", 
-            ["psl"],
-            "psl_Amon_NorCPM1_dcpp"
-        )
-        _ = data.prepare_NorCPM1(
-            ["historical"], 
-            "Amon", 
-            ["psl"],
-            "psl_Amon_NorCPM1_historical"
-        )
-        _ = data.prepare_NorCPM1(
-            ["dcppA-hindcast"], 
-            "Omon", 
-            ["tos"],
-            "tos_Omon_NorCPM1_dcpp"
-        )
-        _ = data.prepare_NorCPM1(
-            ["historical"], 
-            "Omon", 
-            ["tos"],
-            "tos_Omon_NorCPM1_historical"
-        )
+        # logger.info("Preparing NorCPM1")
+        # _ = data.prepare_NorCPM1(
+        #     ["dcppA-hindcast"], 
+        #     "Amon", 
+        #     ["psl"],
+        #     "psl_Amon_NorCPM1_dcpp"
+        # )
+        # # DATA REPLICATION REQUEST IN
+        # # _ = data.prepare_NorCPM1(
+        # #     ["historical"], 
+        # #     "Amon", 
+        # #     ["psl"],
+        # #     "psl_Amon_NorCPM1_historical"
+        # # )
+        # _ = data.prepare_NorCPM1(
+        #     ["dcppA-hindcast"], 
+        #     "Omon", 
+        #     ["tos"],
+        #     "tos_Omon_NorCPM1_dcpp"
+        # )
+        # # DATA REPLICATION REQUEST IN
+        # # _ = data.prepare_NorCPM1(
+        # #     ["historical"], 
+        # #     "Omon", 
+        # #     ["tos"],
+        # #     "tos_Omon_NorCPM1_historical"
+        # # )
 
         # logger.info("Preparing HadSLP2r data")
         # _ = data.prepare_HadSLP2r()

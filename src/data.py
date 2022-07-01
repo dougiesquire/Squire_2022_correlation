@@ -1,5 +1,7 @@
 "Functions for preparing data"
 
+import os
+
 import glob
 
 import dask
@@ -292,7 +294,8 @@ def _prepare_cmip(specs, area_file):
     
     ### Add cell area from hard-coded paths
     area = xr.open_dataset(area_file, chunks={})
-    area = _fix_lat_lon(area.rename({list(area.data_vars)[0]: "area"}), ds)
+    name = os.path.basename(area_file).split("_")[0]
+    area = _fix_lat_lon(area.rename({name: "area"}), ds)
     ds = ds.assign_coords(area)
 
     # Interpolate to regular grid
@@ -306,7 +309,7 @@ def _prepare_cmip(specs, area_file):
     return ds.chunk(chunks)
 
 
-def prepare_HadGEM3(experiments, realm, variables, save_as=None):
+def prepare_HadGEM3_GC31_MM(experiments, realm, variables, save_as=None):
     """
     Open/save HadGEM3-GC31-MM from specified experiment(s) and monthly realm, 
     regrid to a 1deg x 1deg regular grid and save as a zarr collection
@@ -419,7 +422,6 @@ def prepare_EC_Earth3(experiments, realm, variables, save_as=None):
         exp_spec = dict(
             model = "EC-Earth3",
             variant_id = "i1p1f1",
-            members = range(1, 10 + 1),
             grid = grid,
             realm = realm,
             variables = variables,
@@ -428,9 +430,15 @@ def prepare_EC_Earth3(experiments, realm, variables, save_as=None):
         if exp == "dcppA-hindcast":
             exp_spec["dcpp_start_years"] = range(1960, 2018 + 1)
             exp_spec["version"] = "v2020121?"
+            exp_spec["members"] = range(1, 10 + 1)
         elif exp == "historical":
             exp_spec["dcpp_start_years"] = None
-            exp_spec["version"] = "v20200310"
+            exp_spec["version"] = "latest"
+            # Member 3 has screwy lats that can't be readily concatenated
+            # Members 11, 13, 15 start in 1849
+            # Member 19 has very few variables replicated for Omon
+            # Members 101-150 only span 197001-201412
+            exp_spec["members"] = [1, 2, 4, 6, 9, 10, 12, 14, 16, 17]
         else:
             raise ValueError("Please set up specs dict for this experiement")
         specs.append(exp_spec)
