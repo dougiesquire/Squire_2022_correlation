@@ -268,7 +268,7 @@ def _open_cmip6(
     return xr.merge(ds).compute()
 
 
-def _prepare_cmip(specs, area_file):
+def _prepare_cmip(specs, area_file=None):
     """ Prepare some CMIP data from a list of spec dictionaries """
     
     def _fix_lat_lon(ds1, ds2):
@@ -293,10 +293,11 @@ def _prepare_cmip(specs, area_file):
     ds = xr.combine_by_coords(ds, combine_attrs="drop_conflicts")
     
     ### Add cell area from hard-coded paths
-    area = xr.open_dataset(area_file, chunks={})
-    name = os.path.basename(area_file).split("_")[0]
-    area = _fix_lat_lon(area.rename({name: "area"}), ds)
-    ds = ds.assign_coords(area)
+    if area_file is not None:
+        area = xr.open_dataset(area_file, chunks={})
+        name = os.path.basename(area_file).split("_")[0]
+        area = _fix_lat_lon(area.rename({name: "area"}), ds)
+        ds = ds.assign_coords(area)
 
     # Interpolate to regular grid
     ds = interpolate_to_regular_grid(ds, resolution=1.0)
@@ -736,6 +737,7 @@ def prepare_IPSL_CM6A_LR(experiments, realm, variables, save_as=None):
     # Hard-coded paths to take area (area already present for Omon)
     if realm == "Omon":
         grid = "gn"
+        area_file = None
     elif realm == "Amon":
         grid = "gr"
         area_file = (

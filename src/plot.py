@@ -292,3 +292,47 @@ def acf(*objects, headings, partial=False, panel_dim="rolling_mean", nlags=20):
     axs[0, 0].legend()
 
     fig.tight_layout()
+
+
+def params(params, label=None, fig=None):
+    """Plot params fitted by ar_model.fit
+    
+    Parameters
+    ----------
+    params : xarray Dataset
+        The ar model parameters as output by ar_model.fit
+    label : str, optional
+        Legend label
+    fig : matplotlib figure object, optional
+        The figure to plot into
+    """
+
+    variables = list(params.data_vars)
+
+    if fig is None:
+        fig = plt.figure()
+        axs = fig.subplots(len(variables), len(variables), sharex=True)
+    else:
+        axs = fig.axes
+    axs = np.reshape(axs, (len(variables), len(variables)))
+
+    for idx, var in enumerate(variables):
+        coefs = params[var].values[: -len(variables)]
+        noise = params[var].values[-len(variables) :]
+        n_lags = int(len(coefs) / len(variables))
+
+        for idy, coef in enumerate(variables):
+            ax = axs[idy, idx]
+            lags = range(1, n_lags + 1)
+            ax.plot(lags, coefs[idy :: len(variables)], marker="o", label=label)
+            if idy == 0:
+                ax.set_title(f"{var}-like process")
+                if idx == 0:
+                    ax.legend()
+            if idy == (len(variables) - 1):
+                ax.set_xlabel("Lag")
+                ax.set_xticks(lags)
+            if idx == 0:
+                ax.set_ylabel(f"{coef} coefs")
+
+    return fig
