@@ -47,8 +47,8 @@ dependencies:
   - curl=7.83.1=h7bff187_0
   - cycler=0.11.0=pyhd8ed1ab_0
   - cytoolz=0.11.2=py310h5764c6d_2
-  - dask=2022.5.1=pyhd8ed1ab_0
-  - dask-core=2022.5.1=pyhd8ed1ab_0
+  - dask=2022.6.1=pyhd8ed1ab_0
+  - dask-core=2022.6.1=pyhd8ed1ab_0
   - dask-jobqueue=0.7.3=pyhd8ed1ab_0
   - dask-labextension=5.2.0=pyhd8ed1ab_0
   - dataclasses=0.8=pyhc8e2a94_3
@@ -56,7 +56,7 @@ dependencies:
   - debugpy=1.6.0=py310hd8f1fbe_0
   - decorator=5.1.1=pyhd8ed1ab_0
   - defusedxml=0.7.1=pyhd8ed1ab_0
-  - distributed=2022.5.1=pyhd8ed1ab_0
+  - distributed=2022.6.1=pyhd8ed1ab_0
   - eccodes=2.26.0=hc08acdf_0
   - entrypoints=0.4=pyhd8ed1ab_0
   - esmf=8.2.0=nompi_h61edca3_0
@@ -218,7 +218,7 @@ dependencies:
   - numcodecs=0.9.1=py310h122e73d_2
   - numpy=1.21.6=py310h45f3432_0
   - openjpeg=2.4.0=hb52868f_1
-  - openssl=1.1.1o=h166bdaf_0
+  - openssl=1.1.1p=h166bdaf_0
   - ossuuid=1.6.2=hf484d3e_1000
   - packaging=21.3=pyhd8ed1ab_0
   - pandas=1.4.2=py310h769672d_2

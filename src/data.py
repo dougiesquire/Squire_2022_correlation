@@ -690,15 +690,17 @@ def prepare_MPI_ESM1_2_HR(experiments, realm, variables, save_as=None):
             grid = "gn",
             version = "v20??????",
             variant_id = "i1p1f1",
-            members = range(1, 10 + 1),
+            
             realm = realm,
             variables = variables,
             experiment = exp,
         )
         if exp == "dcppA-hindcast":
             exp_spec["dcpp_start_years"] = range(1960, 2018 + 1)
+            exp_spec["members"] = range(1, 5 + 1)
         elif exp == "historical":
             exp_spec["dcpp_start_years"] = None
+            exp_spec["members"] = range(1, 10 + 1)
         else:
             raise ValueError("Please set up specs dict for this experiement")
         specs.append(exp_spec)
