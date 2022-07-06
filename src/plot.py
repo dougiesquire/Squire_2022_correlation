@@ -296,7 +296,7 @@ def acf(*objects, headings, partial=False, panel_dim="rolling_mean", nlags=20):
 
 def params(params, label=None, fig=None):
     """Plot params fitted by ar_model.fit
-    
+
     Parameters
     ----------
     params : xarray Dataset
@@ -318,7 +318,6 @@ def params(params, label=None, fig=None):
 
     for idx, var in enumerate(variables):
         coefs = params[var].values[: -len(variables)]
-        noise = params[var].values[-len(variables) :]
         n_lags = int(len(coefs) / len(variables))
 
         for idy, coef in enumerate(variables):

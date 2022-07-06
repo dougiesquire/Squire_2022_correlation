@@ -166,7 +166,10 @@ def fit(
     param_labels = [
         f"{v}.lag{lag}" for lag in range(1, n_lags + 1) for v in variables
     ] + [f"{v}.noise_var" for v in variables]
-    model_order = ((params[list(params.data_vars)[0]].count("params") - len(variables)) / len(variables)).astype(int)
+    model_order = (
+        (params[list(params.data_vars)[0]].count("params") - len(variables))
+        / len(variables)
+    ).astype(int)
     params = params.assign_coords({"model_order": model_order})
     params = params.assign_coords({"params": param_labels}).dropna("params", how="all")
     return params
@@ -277,13 +280,13 @@ def generate_samples(params, n_times, n_samples, n_members=None, rolling_means=N
 
     if rolling_means is not None:
         if n_members is not None:
-            res = [s.sel(lead=1, drop=True).assign_coords({"rolling_mean": 1})]
-            for av in rolling_means:    
+            res = []
+            for av in rolling_means:
                 rm = s.sel(lead=slice(1, av)).mean("lead")
                 rm = rm.assign_coords({"rolling_mean": av})
                 res.append(rm)
         else:
-            res = [s.assign_coords({"rolling_mean": 1})]
+            res = []
             for av in rolling_means:
                 rm = (
                     s.rolling({"time": av}, min_periods=av, center=False)
@@ -433,7 +436,7 @@ def generate_samples_like(
     n_members=None,
     rolling_means=None,
     fit_kwargs={},
-    plot_diagnostics=True
+    plot_diagnostics=True,
 ):
     """
     Convenience function for generating samples from a AR process fitted to

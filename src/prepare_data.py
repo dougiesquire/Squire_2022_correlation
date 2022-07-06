@@ -20,96 +20,96 @@ def main():
     with Client(processes=False, local_directory=local_directory.name):
         # logger.info("Preparing HadGEM3-GC31-MM data")
         # _ = data.prepare_HadGEM3_GC31_MM(
-        #     ["dcppA-hindcast", "dcppB-forecast"], 
-        #     "Amon", 
+        #     ["dcppA-hindcast", "dcppB-forecast"],
+        #     "Amon",
         #     ["psl"],
         #     "psl_Amon_HadGEM3-GC31-MM_dcpp"
         # )
         # _ = data.prepare_HadGEM3_GC31_MM(
-        #     ["historical"], 
-        #     "Amon", 
+        #     ["historical"],
+        #     "Amon",
         #     ["psl"],
         #     "psl_Amon_HadGEM3-GC31-MM_historical"
         # )
         # _ = data.prepare_HadGEM3_GC31_MM(
-        #     ["dcppA-hindcast", "dcppB-forecast"], 
-        #     "Omon", 
+        #     ["dcppA-hindcast", "dcppB-forecast"],
+        #     "Omon",
         #     ["tos"],
         #     "tos_Omon_HadGEM3-GC31-MM_dcpp"
         # )
         # _ = data.prepare_HadGEM3_GC31_MM(
-        #     ["historical"], 
-        #     "Omon", 
+        #     ["historical"],
+        #     "Omon",
         #     ["tos"],
         #     "tos_Omon_HadGEM3-GC31-MM_historical"
         # )
 
         # logger.info("Preparing EC-Earth3 data")
         # _ = data.prepare_EC_Earth3(
-        #     ["dcppA-hindcast"], 
-        #     "Amon", 
+        #     ["dcppA-hindcast"],
+        #     "Amon",
         #     ["psl"],
         #     "psl_Amon_EC-Earth3_dcpp"
         # )
         # # DATA REPLICATION REQUEST IN
         # # _ = data.prepare_EC_Earth3(
-        # #     ["historical"], 
-        # #     "Amon", 
+        # #     ["historical"],
+        # #     "Amon",
         # #     ["psl"],
         # #     "psl_Amon_EC-Earth3_historical"
         # # )
         # _ = data.prepare_EC_Earth3(
-        #     ["dcppA-hindcast"], 
-        #     "Omon", 
+        #     ["dcppA-hindcast"],
+        #     "Omon",
         #     ["tos"],
         #     "tos_Omon_EC-Earth3_dcpp"
         # )
         # _ = data.prepare_EC_Earth3(
-        #     ["historical"], 
-        #     "Omon", 
+        #     ["historical"],
+        #     "Omon",
         #     ["tos"],
         #     "tos_Omon_EC-Earth3_historical"
         # )
 
         # logger.info("Preparing CanESM5 data")
         # _ = data.prepare_CanESM5(
-        #     ["dcppA-hindcast", "dcppB-forecast"], 
-        #     "Amon", 
+        #     ["dcppA-hindcast", "dcppB-forecast"],
+        #     "Amon",
         #     ["psl"],
         #     "psl_Amon_CanESM5_dcpp"
         # )
         # # DATA REPLICATION REQUEST IN
         # # _ = data.prepare_CanESM5(
-        # #     ["historical"], 
-        # #     "Amon", 
+        # #     ["historical"],
+        # #     "Amon",
         # #     ["psl"],
         # #     "psl_Amon_CanESM5_historical"
         # # )
         # # REQUIRES hugemem NODE
         # _ = data.prepare_CanESM5(
-        #     ["dcppA-hindcast", "dcppB-forecast"], 
-        #     "Omon", 
+        #     ["dcppA-hindcast", "dcppB-forecast"],
+        #     "Omon",
         #     ["tos"],
         #     "tos_Omon_CanESM5_dcpp"
         # )
         # _ = data.prepare_CanESM5(
-        #     ["historical"], 
-        #     "Omon", 
+        #     ["historical"],
+        #     "Omon",
         #     ["tos"],
         #     "tos_Omon_CanESM5_historical"
         # )
 
         # logger.info("Preparing CESM1.1 data")
         # _ = data.prepare_CESM1_1_CAM5_CMIP5(
-        #     ["dcppA-hindcast"], 
-        #     "Amon", 
+        #     ["dcppA-hindcast"],
+        #     "Amon",
         #     ["psl"],
         #     "psl_Amon_CESM1-1-CAM5-CMIP5_dcpp"
         # )
         # # REQUIRES hugemem NODE
         # _ = data.prepare_CESM1_1_CAM5_CMIP5(
-        #     ["dcppA-hindcast"], 
-        #     "Omon", 
+        #     ["dcppA-hindcast"],
+        #     "Omon",
         #     ["tos"],
         #     "tos_Omon_CESM1-1-CAM5-CMIP5_dcpp"
         # )
@@ -117,112 +117,106 @@ def main():
 
         # logger.info("Preparing MIROC6 data")
         # _ = data.prepare_MIROC6(
-        #     ["dcppA-hindcast"], 
-        #     "Amon", 
+        #     ["dcppA-hindcast"],
+        #     "Amon",
         #     ["psl"],
         #     "psl_Amon_MIROC6_dcpp"
         # )
         # # DATA REPLICATION REQUEST IN
         # # _ = data.prepare_MIROC6(
-        # #     ["historical"], 
-        # #     "Amon", 
+        # #     ["historical"],
+        # #     "Amon",
         # #     ["psl"],
         # #     "psl_Amon_MIROC6_historical"
         # # )
         # _ = data.prepare_MIROC6(
-        #     ["dcppA-hindcast"], 
-        #     "Omon", 
+        #     ["dcppA-hindcast"],
+        #     "Omon",
         #     ["tos"],
         #     "tos_Omon_MIROC6_dcpp"
         # )
         # _ = data.prepare_MIROC6(
-        #     ["historical"], 
-        #     "Omon", 
+        #     ["historical"],
+        #     "Omon",
         #     ["tos"],
         #     "tos_Omon_MIROC6_historical"
         # )
 
         # logger.info("Preparing MPI-ESM1.2-HR data")
         # _ = data.prepare_MPI_ESM1_2_HR(
-        #     ["dcppA-hindcast"], 
-        #     "Amon", 
+        #     ["dcppA-hindcast"],
+        #     "Amon",
         #     ["psl"],
         #     "psl_Amon_MPI-ESM1-2-HR_dcpp"
         # )
         # # DATA REPLICATION REQUEST IN
         # # _ = data.prepare_MPI_ESM1_2_HR(
-        # #     ["historical"], 
-        # #     "Amon", 
+        # #     ["historical"],
+        # #     "Amon",
         # #     ["psl"],
         # #     "psl_Amon_MPI-ESM1-2-HR_historical"
         # # )
         # # REQUIRES hugemem NODE
         # _ = data.prepare_MPI_ESM1_2_HR(
-        #     ["dcppA-hindcast"], 
-        #     "Omon", 
+        #     ["dcppA-hindcast"],
+        #     "Omon",
         #     ["tos"],
         #     "tos_Omon_MPI-ESM1-2-HR_dcpp"
         # )
         # _ = data.prepare_MPI_ESM1_2_HR(
-        #     ["historical"], 
-        #     "Omon", 
+        #     ["historical"],
+        #     "Omon",
         #     ["tos"],
         #     "tos_Omon_MPI-ESM1-2-HR_historical"
         # )
 
         logger.info("Preparing IPSL-CM6A-LR data")
         _ = data.prepare_IPSL_CM6A_LR(
-            ["dcppA-hindcast"], 
-            "Amon", 
-            ["psl"],
-            "psl_Amon_IPSL-CM6A-LR_dcpp"
+            ["dcppA-hindcast"], "Amon", ["psl"], "psl_Amon_IPSL-CM6A-LR_dcpp"
         )
         # DATA REPLICATION REQUEST IN
         # _ = data.prepare_IPSL_CM6A_LR(
-        #     ["historical"], 
-        #     "Amon", 
+        #     ["historical"],
+        #     "Amon",
         #     ["psl"],
         #     "psl_Amon_IPSL-CM6A-LR_historical"
         # )
         # REQUIRES hugemem NODE
         _ = data.prepare_IPSL_CM6A_LR(
-            ["dcppA-hindcast"], 
-            "Omon", 
-            ["tos"],
-            "tos_Omon_IPSL-CM6A-LR_dcpp"
+            ["dcppA-hindcast"], "Omon", ["tos"], "tos_Omon_IPSL-CM6A-LR_dcpp"
         )
         # DATA REPLICATION REQUEST IN
         # _ = data.prepare_IPSL_CM6A_LR(
-        #     ["historical"], 
-        #     "Omon", 
+        #     ["historical"],
+        #     "Omon",
         #     ["tos"],
         #     "tos_Omon_IPSL-CM6A-LR_historical"
         # )
 
         # logger.info("Preparing NorCPM1")
         # _ = data.prepare_NorCPM1(
-        #     ["dcppA-hindcast"], 
-        #     "Amon", 
+        #     ["dcppA-hindcast"],
+        #     "Amon",
         #     ["psl"],
         #     "psl_Amon_NorCPM1_dcpp"
         # )
         # # DATA REPLICATION REQUEST IN
         # # _ = data.prepare_NorCPM1(
-        # #     ["historical"], 
-        # #     "Amon", 
+        # #     ["historical"],
+        # #     "Amon",
         # #     ["psl"],
         # #     "psl_Amon_NorCPM1_historical"
         # # )
         # _ = data.prepare_NorCPM1(
-        #     ["dcppA-hindcast"], 
-        #     "Omon", 
+        #     ["dcppA-hindcast"],
+        #     "Omon",
         #     ["tos"],
         #     "tos_Omon_NorCPM1_dcpp"
         # )
         # # DATA REPLICATION REQUEST IN
         # # _ = data.prepare_NorCPM1(
-        # #     ["historical"], 
-        # #     "Omon", 
+        # #     ["historical"],
+        # #     "Omon",
         # #     ["tos"],
         # #     "tos_Omon_NorCPM1_historical"
         # # )
