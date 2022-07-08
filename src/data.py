@@ -9,7 +9,6 @@ Model         | mem | hist | inits | notes
 BCC-CSM2-MR   | 8   | yes  | 61-14 | no areas for this model
 FGOALS-f3-L   | 3   | yes  | 60-21 | no areacella for this model
 MPI-ESM1-2-LR | 16  | yes  | 60-21 | no Omon for this model
-MRI-ESM2-0    | 10  | yes  | 60-19 | 
 """
 
 import os
