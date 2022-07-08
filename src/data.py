@@ -1,4 +1,16 @@
-"Functions for preparing data"
+""" 
+Functions for preparing data
+
+CMIP6 DCPP datasets on NCI that are not included
+------------------------------------------------
+
+Model         | mem | hist | inits | notes
+----------------------------------------------------------------
+BCC-CSM2-MR   | 8   | yes  | 61-14 | no areas for this model
+FGOALS-f3-L   | 3   | yes  | 60-21 | no areacella for this model
+MPI-ESM1-2-LR | 16  | yes  | 60-21 | no Omon for this model
+MRI-ESM2-0    | 10  | yes  | 60-19 | 
+"""
 
 import os
 
@@ -396,6 +408,76 @@ def prepare_HadGEM3_GC31_MM(experiments, realm, variables, save_as=None):
         return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
     else:
         return ds
+    
+
+def prepare_CMCC_CM2_SR5(experiments, realm, variables, save_as=None):
+    """
+    Open/save CMCC-CM2-SR5 from specified experiment(s) and monthly realm,
+    regrid to a 1deg x 1deg regular grid and save as a zarr collection
+
+    Parameters
+    ----------
+    experiments : list of str
+        The name(s) of the experiment(s) to open
+    realm : str
+        The name of the realm containing the variable(s)
+    variables : list of str
+        The name(s) of the variable(s) to extract
+    save_as : str, optional
+        Filename to use to save the prepared data. If None, return the lazy
+        data
+    """
+
+    # Hard-coded paths to take area from
+    if realm == "Omon":
+        area_file = (
+            f"{RAW_DATA_DIR}/CMCC-CM2-SR5_historical/r1i1p1f1/Ofx/areacello/gn/"
+            "v20200616/areacello_Ofx_CMCC-CM2-SR5_historical_r1i1p1f1_gn.nc"
+        )
+    elif realm == "Amon":
+        area_file = (
+            f"{RAW_DATA_DIR}/CMCC-CM2-SR5_historical/r1i1p1f1/fx/areacella/gn/"
+            "v20200616/areacella_fx_CMCC-CM2-SR5_historical_r1i1p1f1_gn.nc"
+        )
+    else:
+        raise ValueError("I don't (yet) support this realm")
+
+    # Generate specs for different experiments
+    specs = []
+    for exp in experiments:
+        # Shared specs across experiments
+        exp_spec = dict(
+            model="CMCC-CM2-SR5",
+            variant_id="i1p1f1",
+            grid="gn",
+            realm=realm,
+            variables=variables,
+            experiment=exp,
+        )
+        if exp == "dcppA-hindcast":
+            exp_spec["dcpp_start_years"] = range(1960, 2019 + 1)
+            exp_spec["members"] = range(1, 10 + 1)
+            exp_spec["version"] = "v20210???"
+        elif exp == "dcppB-forecast":
+            exp_spec["dcpp_start_years"] = range(2020, 2020 + 1)
+            exp_spec["members"] = range(1, 10 + 1)
+            exp_spec["version"] = "v20210???"
+        elif exp == "historical":
+            exp_spec["dcpp_start_years"] = None
+            # Only member 1 is i1p1f1
+            exp_spec["members"] = [1] 
+            exp_spec["version"] = "latest"
+        else:
+            raise ValueError("Please set up specs dict for this experiement")
+        specs.append(exp_spec)
+
+    ds = _prepare_cmip(specs, area_file)
+
+    if save_as is not None:
+        ds.to_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr", mode="w")
+        return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
+    else:
+        return ds
 
 
 def prepare_EC_Earth3(experiments, realm, variables, save_as=None):
@@ -421,15 +503,15 @@ def prepare_EC_Earth3(experiments, realm, variables, save_as=None):
         grid = "gn"
         area_file = (
             f"{RAW_DATA_DIR}/EC-Earth3_historical/r1i1p1f1/"
-            f"Ofx/areacello/gn/v20200918/"
-            f"areacello_Ofx_EC-Earth3_historical_r1i1p1f1_gn.nc"
+            "Ofx/areacello/gn/v20200918/"
+            "areacello_Ofx_EC-Earth3_historical_r1i1p1f1_gn.nc"
         )
     elif realm == "Amon":
         grid = "gr"
         area_file = (
             f"{RAW_DATA_DIR}/EC-Earth3_historical/r1i1p1f1/"
-            f"fx/areacella/gr/v20210324/"
-            f"areacella_fx_EC-Earth3_historical_r1i1p1f1_gr.nc"
+            "fx/areacella/gr/v20210324/"
+            "areacella_fx_EC-Earth3_historical_r1i1p1f1_gr.nc"
         )
     else:
         raise ValueError("I don't (yet) support this realm")
@@ -455,9 +537,10 @@ def prepare_EC_Earth3(experiments, realm, variables, save_as=None):
             exp_spec["version"] = "latest"
             # Member 3 has screwy lats that can't be readily concatenated
             # Members 11, 13, 15 start in 1849
+            # Member 14 has years missing on NCI
             # Member 19 has very few variables replicated for Omon
             # Members 101-150 only span 197001-201412
-            exp_spec["members"] = [1, 2, 4, 6, 9, 10, 12, 14, 16, 17]
+            exp_spec["members"] = [1, 2, 4, 6, 7, 9, 10, 12, 16, 17]
         else:
             raise ValueError("Please set up specs dict for this experiement")
         specs.append(exp_spec)
@@ -493,12 +576,12 @@ def prepare_CanESM5(experiments, realm, variables, save_as=None):
     if realm == "Omon":
         area_file = (
             f"{RAW_DATA_DIR}/CanESM5_historical/r1i1p2f1/Ofx/areacello/gn/"
-            f"v20190429/areacello_Ofx_CanESM5_historical_r1i1p2f1_gn.nc"
+            "v20190429/areacello_Ofx_CanESM5_historical_r1i1p2f1_gn.nc"
         )
     elif realm == "Amon":
         area_file = (
             f"{RAW_DATA_DIR}/CanESM5_historical/r1i1p2f1/fx/areacella/gn/"
-            f"v20190429/areacella_fx_CanESM5_historical_r1i1p2f1_gn.nc"
+            "v20190429/areacella_fx_CanESM5_historical_r1i1p2f1_gn.nc"
         )
     else:
         raise ValueError("I don't (yet) support this realm")
@@ -563,12 +646,12 @@ def prepare_CESM1_1_CAM5_CMIP5(experiments, realm, variables, save_as=None):
     if realm == "Omon":
         area_file = (
             f"{RAW_DATA_DIR}/CESM2_historical/r1i1p1f1/Ofx/areacello/gn/"
-            f"v20190308/areacello_Ofx_CESM2_historical_r1i1p1f1_gn.nc"
+            "v20190308/areacello_Ofx_CESM2_historical_r1i1p1f1_gn.nc"
         )
     elif realm == "Amon":
         area_file = (
             f"{RAW_DATA_DIR}/CESM2_historical/r1i1p1f1/fx/areacella/gn/"
-            f"v20190308/areacella_fx_CESM2_historical_r1i1p1f1_gn.nc"
+            "v20190308/areacella_fx_CESM2_historical_r1i1p1f1_gn.nc"
         )
     else:
         raise ValueError("I don't (yet) support this realm")
@@ -625,12 +708,12 @@ def prepare_MIROC6(experiments, realm, variables, save_as=None):
     if realm == "Omon":
         area_file = (
             f"{RAW_DATA_DIR}/MIROC6_historical/r1i1p1f1/Ofx/areacello/gn/"
-            f"v20190311/areacello_Ofx_MIROC6_historical_r1i1p1f1_gn.nc"
+            "v20190311/areacello_Ofx_MIROC6_historical_r1i1p1f1_gn.nc"
         )
     elif realm == "Amon":
         area_file = (
             f"{RAW_DATA_DIR}/MIROC6_historical/r1i1p1f1/fx/areacella/gn/"
-            f"v20190311/areacella_fx_MIROC6_historical_r1i1p1f1_gn.nc"
+            "v20190311/areacella_fx_MIROC6_historical_r1i1p1f1_gn.nc"
         )
     else:
         raise ValueError("I don't (yet) support this realm")
@@ -689,12 +772,12 @@ def prepare_MPI_ESM1_2_HR(experiments, realm, variables, save_as=None):
     if realm == "Omon":
         area_file = (
             f"{RAW_DATA_DIR}/MPI-ESM1-2-HR_historical/r1i1p1f1/Ofx/areacello/gn/"
-            f"v20190710/areacello_Ofx_MPI-ESM1-2-HR_historical_r1i1p1f1_gn.nc"
+            "v20190710/areacello_Ofx_MPI-ESM1-2-HR_historical_r1i1p1f1_gn.nc"
         )
     elif realm == "Amon":
         area_file = (
             f"{RAW_DATA_DIR}/MPI-ESM1-2-HR_historical/r1i1p1f1/fx/areacella/gn/"
-            f"v20190710/areacella_fx_MPI-ESM1-2-HR_historical_r1i1p1f1_gn.nc"
+            "v20190710/areacella_fx_MPI-ESM1-2-HR_historical_r1i1p1f1_gn.nc"
         )
     else:
         raise ValueError("I don't (yet) support this realm")
@@ -817,12 +900,12 @@ def prepare_NorCPM1(experiments, realm, variables, save_as=None):
     if realm == "Omon":
         area_file = (
             f"{RAW_DATA_DIR}/NorCPM1_historical/r1i1p1f1/Ofx/areacello/gn/"
-            f"v20200724/areacello_Ofx_NorCPM1_historical_r1i1p1f1_gn.nc"
+            "v20200724/areacello_Ofx_NorCPM1_historical_r1i1p1f1_gn.nc"
         )
     elif realm == "Amon":
         area_file = (
             f"{RAW_DATA_DIR}/NorCPM1_historical/r1i1p1f1/fx/areacella/gn/"
-            f"v20200724/areacella_fx_NorCPM1_historical_r1i1p1f1_gn.nc"
+            "v20200724/areacella_fx_NorCPM1_historical_r1i1p1f1_gn.nc"
         )
     else:
         raise ValueError("I don't (yet) support this realm")
@@ -833,6 +916,7 @@ def prepare_NorCPM1(experiments, realm, variables, save_as=None):
         # Shared specs across experiments
         exp_spec = dict(
             model="NorCPM1",
+            variant_id="i1p1f1",
             grid="gn",
             version="latest",
             realm=realm,
@@ -841,13 +925,76 @@ def prepare_NorCPM1(experiments, realm, variables, save_as=None):
         )
         if exp == "dcppA-hindcast":
             # 10 members of i2p1f1 also exist
-            exp_spec["variant_id"] = "i1p1f1"
             exp_spec["dcpp_start_years"] = range(1960, 2018 + 1)
             exp_spec["members"] = range(1, 10 + 1)
         elif exp == "historical":
-            exp_spec["variant_id"] = "i1p1f1"
             exp_spec["dcpp_start_years"] = None
-            exp_spec["members"] = range(1, 30 + 1)
+            # Member 10 goes to 2029 for tos
+            exp_spec["members"] = list(range(1, 9 + 1)) + list(range(11, 30 + 1))
+        else:
+            raise ValueError("Please set up specs dict for this experiement")
+        specs.append(exp_spec)
+
+    ds = _prepare_cmip(specs, area_file)
+
+    if save_as is not None:
+        ds.to_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr", mode="w")
+        return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
+    else:
+        return ds
+    
+    
+def prepare_MRI_ESM2_0(experiments, realm, variables, save_as=None):
+    """
+    Open/save MRI-ESM2-0 from specified experiment(s) and monthly realm,
+    regrid to a 1deg x 1deg regular grid and save as a zarr collection
+
+    Parameters
+    ----------
+    experiments : list of str
+        The name(s) of the experiment(s) to open
+    realm : str
+        The name of the realm containing the variable(s)
+    variables : list of str
+        The name(s) of the variable(s) to extract
+    save_as : str, optional
+        Filename to use to save the prepared data. If None, return the lazy
+        data
+    """
+
+    # Hard-coded paths to take area from
+    if realm == "Omon":
+        area_file = (
+            f"{RAW_DATA_DIR}/MRI-ESM2-0_historical/r1i1p1f1/Ofx/areacello/gn/"
+            "v20191210/areacello_Ofx_MRI-ESM2-0_historical_r1i1p1f1_gn.nc"
+        )
+    elif realm == "Amon":
+        area_file = (
+            f"{RAW_DATA_DIR}/MRI-ESM2-0_historical/r1i1p1f1/fx/areacella/gn/"
+            "v20190603/areacella_fx_MRI-ESM2-0_historical_r1i1p1f1_gn.nc"
+        )
+    else:
+        raise ValueError("I don't (yet) support this realm")
+
+    # Generate specs for different experiments
+    specs = []
+    for exp in experiments:
+        # Shared specs across experiments
+        exp_spec = dict(
+            model="MRI-ESM2-0",
+            variant_id="i1p1f1",
+            members=range(1, 10 + 1),
+            grid="gn",
+            version="latest",
+            realm=realm,
+            variables=variables,
+            experiment=exp,
+        )
+        if exp == "dcppA-hindcast":
+            # 10 members of i2p1f1 also exist
+            exp_spec["dcpp_start_years"] = range(1960, 2019 + 1)
+        elif exp == "historical":
+            exp_spec["dcpp_start_years"] = None
         else:
             raise ValueError("Please set up specs dict for this experiement")
         specs.append(exp_spec)
