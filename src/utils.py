@@ -336,8 +336,11 @@ def get_hindcast_mean(hcst, mean_lead_range=[(0, 1)]):
         ).mean("lead")
         hcst_mean = hcst_mean.swap_dims({"init": "time"})
         res.append(hcst_mean.assign_coords({"rolling_mean": r[1] - r[0]}))
-
-    return xr.concat(res, dim="rolling_mean").squeeze("rolling_mean")
+    res = xr.concat(res, dim="rolling_mean")
+    if res.sizes["rolling_mean"] == 1:
+        res.squeeze("rolling_mean")
+    else:
+        return res
 
 
 def get_observation_rolling_mean(ds, rolling_mean):
@@ -356,5 +359,8 @@ def get_observation_rolling_mean(ds, rolling_mean):
         )
         rm = rm.assign_coords({"rolling_mean": av})
         res.append(rm)
-
-    return xr.concat(res, dim="rolling_mean").squeeze("rolling_mean")
+    res = xr.concat(res, dim="rolling_mean")
+    if res.sizes["rolling_mean"] == 1:
+        res.squeeze("rolling_mean")
+    else:
+        return res

@@ -1,0 +1,105 @@
+/g/data/xv83/users/ds0092/software/miniconda3/envs/squire_2022_correlation/lib/python3.10/site-packages/distributed/cli/dask_worker.py:333: FutureWarning: The --nprocs flag will be removed in a future release. It has been renamed to --nworkers.
+  warnings.warn(
+2022-07-08 13:11:23,128 - distributed.nanny - INFO -         Start Nanny at: 'tcp://10.0.128.14:39941'
+2022-07-08 13:11:23,164 - distributed.nanny - INFO -         Start Nanny at: 'tcp://10.0.128.14:33911'
+2022-07-08 13:11:23,165 - distributed.nanny - INFO -         Start Nanny at: 'tcp://10.0.128.14:35743'
+2022-07-08 13:11:23,169 - distributed.nanny - INFO -         Start Nanny at: 'tcp://10.0.128.14:37167'
+2022-07-08 13:11:26,011 - distributed.diskutils - INFO - Found stale lock file and directory '/local/v14/ds0092/tmp/dask-worker-space/worker-a1jsovsw', purging
+2022-07-08 13:11:31,273 - distributed.worker - INFO -       Start worker at:    tcp://10.0.128.14:35811
+2022-07-08 13:11:31,273 - distributed.worker - INFO -       Start worker at:    tcp://10.0.128.14:46453
+2022-07-08 13:11:31,274 - distributed.worker - INFO -          Listening to:    tcp://10.0.128.14:35811
+2022-07-08 13:11:31,274 - distributed.worker - INFO -          Listening to:    tcp://10.0.128.14:46453
+2022-07-08 13:11:31,274 - distributed.worker - INFO -          dashboard at:          10.0.128.14:35549
+2022-07-08 13:11:31,274 - distributed.worker - INFO -          dashboard at:          10.0.128.14:46793
+2022-07-08 13:11:31,274 - distributed.worker - INFO - Waiting to connect to:   tcp://10.0.128.137:40431
+2022-07-08 13:11:31,274 - distributed.worker - INFO - Waiting to connect to:   tcp://10.0.128.137:40431
+2022-07-08 13:11:31,274 - distributed.worker - INFO - -------------------------------------------------
+2022-07-08 13:11:31,274 - distributed.worker - INFO - -------------------------------------------------
+2022-07-08 13:11:31,274 - distributed.worker - INFO -               Threads:                          4
+2022-07-08 13:11:31,274 - distributed.worker - INFO -               Threads:                          4
+2022-07-08 13:11:31,274 - distributed.worker - INFO -                Memory:                  10.94 GiB
+2022-07-08 13:11:31,275 - distributed.worker - INFO -                Memory:                  10.94 GiB
+2022-07-08 13:11:31,275 - distributed.worker - INFO -       Local Directory: /local/v14/ds0092/tmp/dask-worker-space/worker-y9wsdgsl
+2022-07-08 13:11:31,275 - distributed.worker - INFO -       Local Directory: /local/v14/ds0092/tmp/dask-worker-space/worker-olb0jtle
+2022-07-08 13:11:31,275 - distributed.worker - INFO - -------------------------------------------------
+2022-07-08 13:11:31,275 - distributed.worker - INFO - -------------------------------------------------
+2022-07-08 13:11:31,279 - distributed.worker - INFO -       Start worker at:    tcp://10.0.128.14:45635
+2022-07-08 13:11:31,279 - distributed.worker - INFO -       Start worker at:    tcp://10.0.128.14:40835
+2022-07-08 13:11:31,279 - distributed.worker - INFO -          Listening to:    tcp://10.0.128.14:45635
+2022-07-08 13:11:31,279 - distributed.worker - INFO -          Listening to:    tcp://10.0.128.14:40835
+2022-07-08 13:11:31,279 - distributed.worker - INFO -          dashboard at:          10.0.128.14:34421
+2022-07-08 13:11:31,279 - distributed.worker - INFO -          dashboard at:          10.0.128.14:41189
+2022-07-08 13:11:31,279 - distributed.worker - INFO - Waiting to connect to:   tcp://10.0.128.137:40431
+2022-07-08 13:11:31,279 - distributed.worker - INFO - Waiting to connect to:   tcp://10.0.128.137:40431
+2022-07-08 13:11:31,279 - distributed.worker - INFO - -------------------------------------------------
+2022-07-08 13:11:31,279 - distributed.worker - INFO - -------------------------------------------------
+2022-07-08 13:11:31,280 - distributed.worker - INFO -               Threads:                          4
+2022-07-08 13:11:31,280 - distributed.worker - INFO -               Threads:                          4
+2022-07-08 13:11:31,280 - distributed.worker - INFO -                Memory:                  10.94 GiB
+2022-07-08 13:11:31,280 - distributed.worker - INFO -                Memory:                  10.94 GiB
+2022-07-08 13:11:31,280 - distributed.worker - INFO -       Local Directory: /local/v14/ds0092/tmp/dask-worker-space/worker-gxxep6mr
+2022-07-08 13:11:31,280 - distributed.worker - INFO -       Local Directory: /local/v14/ds0092/tmp/dask-worker-space/worker-mmjvu46n
+2022-07-08 13:11:31,280 - distributed.worker - INFO - -------------------------------------------------
+2022-07-08 13:11:31,280 - distributed.worker - INFO - -------------------------------------------------
+2022-07-08 13:11:31,307 - distributed.worker - INFO -         Registered to:   tcp://10.0.128.137:40431
+2022-07-08 13:11:31,307 - distributed.worker - INFO - -------------------------------------------------
+2022-07-08 13:11:31,308 - distributed.core - INFO - Starting established connection
+2022-07-08 13:11:31,309 - distributed.worker - INFO -         Registered to:   tcp://10.0.128.137:40431
+2022-07-08 13:11:31,309 - distributed.worker - INFO - -------------------------------------------------
+2022-07-08 13:11:31,310 - distributed.core - INFO - Starting established connection
+2022-07-08 13:11:31,312 - distributed.worker - INFO -         Registered to:   tcp://10.0.128.137:40431
+2022-07-08 13:11:31,312 - distributed.worker - INFO - -------------------------------------------------
+2022-07-08 13:11:31,313 - distributed.core - INFO - Starting established connection
+2022-07-08 13:11:31,314 - distributed.worker - INFO -         Registered to:   tcp://10.0.128.137:40431
+2022-07-08 13:11:31,314 - distributed.worker - INFO - -------------------------------------------------
+2022-07-08 13:11:31,315 - distributed.core - INFO - Starting established connection
+2022-07-08 13:11:54,817 - distributed.core - INFO - Event loop was unresponsive in Worker for 6.44s.  This is often caused by long-running GIL-holding functions or moving large chunks of data. This can cause timeouts and instability.
+2022-07-08 13:11:54,817 - distributed.core - INFO - Event loop was unresponsive in Worker for 6.45s.  This is often caused by long-running GIL-holding functions or moving large chunks of data. This can cause timeouts and instability.
+2022-07-08 13:13:00,689 - distributed.core - INFO - Event loop was unresponsive in Worker for 8.93s.  This is often caused by long-running GIL-holding functions or moving large chunks of data. This can cause timeouts and instability.
+2022-07-08 13:13:06,625 - distributed.core - INFO - Event loop was unresponsive in Worker for 14.88s.  This is often caused by long-running GIL-holding functions or moving large chunks of data. This can cause timeouts and instability.
+2022-07-08 13:35:09,594 - distributed.utils_perf - INFO - full garbage collection released 60.20 MiB from 1602 reference cycles (threshold: 9.54 MiB)
+slurmstepd: error: *** JOB 49734 ON ood-n14 CANCELLED AT 2022-07-08T13:45:49 ***
+2022-07-08 13:45:49,573 - distributed.worker - INFO - Stopping worker at tcp://10.0.128.14:45635
+2022-07-08 13:45:49,573 - distributed.worker - INFO - Stopping worker at tcp://10.0.128.14:35811
+2022-07-08 13:45:49,573 - distributed.worker - INFO - Stopping worker at tcp://10.0.128.14:40835
+2022-07-08 13:45:49,573 - distributed.worker - INFO - Stopping worker at tcp://10.0.128.14:46453
+2022-07-08 13:45:49,580 - distributed.worker - INFO - Connection to scheduler broken. Closing without reporting. ID: Worker-92d8636f-23e0-4f5d-9f52-af0dea868f71 Address tcp://10.0.128.14:45635 Status: Status.closing
+2022-07-08 13:45:49,581 - distributed.worker - INFO - Connection to scheduler broken. Closing without reporting. ID: Worker-8354f600-228f-4cdb-af45-86f3759621f9 Address tcp://10.0.128.14:35811 Status: Status.closing
+2022-07-08 13:45:49,582 - distributed.worker - INFO - Connection to scheduler broken. Closing without reporting. ID: Worker-485e4432-82ad-4661-bf68-99776a994a67 Address tcp://10.0.128.14:40835 Status: Status.closing
+2022-07-08 13:45:49,584 - distributed.worker - INFO - Connection to scheduler broken. Closing without reporting. ID: Worker-3855126c-d57f-4abf-9ca5-bcd774efa254 Address tcp://10.0.128.14:46453 Status: Status.closing
+2022-07-08 13:45:49,582 - distributed.batched - INFO - Batched Comm Closed <TCP (closed) Worker->Scheduler local=tcp://10.0.128.14:50100 remote=tcp://10.0.128.137:40431>
+Traceback (most recent call last):
+  File "/g/data/xv83/users/ds0092/software/miniconda3/envs/squire_2022_correlation/lib/python3.10/site-packages/distributed/batched.py", line 97, in _background_send
+    nbytes = yield self.comm.write(
+  File "/g/data/xv83/users/ds0092/software/miniconda3/envs/squire_2022_correlation/lib/python3.10/site-packages/tornado/gen.py", line 762, in run
+    value = future.result()
+  File "/g/data/xv83/users/ds0092/software/miniconda3/envs/squire_2022_correlation/lib/python3.10/site-packages/distributed/comm/tcp.py", line 273, in write
+    raise CommClosedError()
+distributed.comm.core.CommClosedError
+2022-07-08 13:45:49,585 - distributed.batched - INFO - Batched Comm Closed <TCP (closed) Worker->Scheduler local=tcp://10.0.128.14:50096 remote=tcp://10.0.128.137:40431>
+Traceback (most recent call last):
+  File "/g/data/xv83/users/ds0092/software/miniconda3/envs/squire_2022_correlation/lib/python3.10/site-packages/distributed/batched.py", line 97, in _background_send
+    nbytes = yield self.comm.write(
+  File "/g/data/xv83/users/ds0092/software/miniconda3/envs/squire_2022_correlation/lib/python3.10/site-packages/tornado/gen.py", line 762, in run
+    value = future.result()
+  File "/g/data/xv83/users/ds0092/software/miniconda3/envs/squire_2022_correlation/lib/python3.10/site-packages/distributed/comm/tcp.py", line 273, in write
+    raise CommClosedError()
+distributed.comm.core.CommClosedError
+2022-07-08 13:45:49,583 - distributed.batched - INFO - Batched Comm Closed <TCP (closed) Worker->Scheduler local=tcp://10.0.128.14:50098 remote=tcp://10.0.128.137:40431>
+Traceback (most recent call last):
+  File "/g/data/xv83/users/ds0092/software/miniconda3/envs/squire_2022_correlation/lib/python3.10/site-packages/distributed/batched.py", line 97, in _background_send
+    nbytes = yield self.comm.write(
+  File "/g/data/xv83/users/ds0092/software/miniconda3/envs/squire_2022_correlation/lib/python3.10/site-packages/tornado/gen.py", line 762, in run
+    value = future.result()
+  File "/g/data/xv83/users/ds0092/software/miniconda3/envs/squire_2022_correlation/lib/python3.10/site-packages/distributed/comm/tcp.py", line 273, in write
+    raise CommClosedError()
+distributed.comm.core.CommClosedError
+2022-07-08 13:45:49,584 - distributed.batched - INFO - Batched Comm Closed <TCP (closed) Worker->Scheduler local=tcp://10.0.128.14:50102 remote=tcp://10.0.128.137:40431>
+Traceback (most recent call last):
+  File "/g/data/xv83/users/ds0092/software/miniconda3/envs/squire_2022_correlation/lib/python3.10/site-packages/distributed/batched.py", line 97, in _background_send
+    nbytes = yield self.comm.write(
+  File "/g/data/xv83/users/ds0092/software/miniconda3/envs/squire_2022_correlation/lib/python3.10/site-packages/tornado/gen.py", line 762, in run
+    value = future.result()
+  File "/g/data/xv83/users/ds0092/software/miniconda3/envs/squire_2022_correlation/lib/python3.10/site-packages/distributed/comm/tcp.py", line 273, in write
+    raise CommClosedError()
+distributed.comm.core.CommClosedError
