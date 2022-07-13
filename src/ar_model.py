@@ -200,107 +200,112 @@ def generate_samples(params, n_times, n_samples, n_members=None, rolling_means=N
     samples : xarray Dataset
         Simulations of the (V)AR process
     """
+    def _generate_samples(*params, extend_time):
+        """Generate samples of (V)AR process with specified params"""
+        n_vars = len(params)
 
-    variables = list(params.data_vars)
-    n_vars = len(variables)
-    n_coefs = int(params.sizes["params"] - n_vars)
-    n_lags = int(n_coefs / n_vars)
+        # Drop NaNs
+        params = [p[~np.isnan(p)] for p in params]
 
-    # Extract coefs and noise variance
-    sigma2 = np.column_stack(
-        [params[v].isel(params=slice(-len(variables), None)) for v in variables]
-    )
-    coefs = np.column_stack(
-        [params[v].isel(params=slice(-len(variables))) for v in variables]
-    )
+        # Extract coefs and noise variance
+        sigma2 = np.column_stack([p[-len(variables) :] for p in params])
+        coefs = np.column_stack([p[: -len(variables)] for p in params])
 
-    if n_members is not None:
-        extend = n_lags - 1 if n_lags > 0 else 0
-    elif rolling_means is None:
-        extend = 0
-    else:
-        extend = max(rolling_means) - 1
+        n_coefs = coefs.shape[0]
+        n_lags = int(n_coefs / n_vars)
 
-    dims = ["time", "sample"]
-    coords = {
-        "time": range(1, n_times + extend + 1),
-        "sample": range(n_samples),
-    }
+        if n_vars > 1:
+            # VAR process
+            from statsmodels.tsa.vector_ar.var_model import VARProcess
 
-    if len(variables) > 1:
-        # VAR process
-        from statsmodels.tsa.vector_ar.var_model import VARProcess
+            # Restack coefs to format expected by VARProcess.simulate_var
+            coefs = coefs.reshape((n_lags, n_vars, n_vars)).swapaxes(1, 2)
 
-        # Restack coefs to format expected by VARProcess.simulate_var
-        coefs = coefs.reshape((n_lags, n_vars, n_vars)).swapaxes(1, 2)
+            # For trend = "n" (see statsmodels/tsa/vector_ar/var_model.py#L1356):
+            coefs_exog = coefs[:0].T
+            _params_info = {
+                "k_trend": 0,
+                "k_exog_user": 0,
+                "k_ar": n_lags,
+            }
 
-        # For trend = "n" (see statsmodels/tsa/vector_ar/var_model.py#L1356):
-        coefs_exog = coefs[:0].T
-        _params_info = {
-            "k_trend": 0,
-            "k_exog_user": 0,
-            "k_ar": n_lags,
-        }
+            process = VARProcess(coefs, coefs_exog, sigma2, _params_info=_params_info)
+            samples = np.empty(shape=(n_times + extend_time, n_vars, n_samples))
+            extend_time += n_lags
+            for i in range(n_samples):
+                samples[..., i] = process.simulate_var(steps=n_times + extend_time).astype(
+                    "float32"
+                )[n_lags:]
+            return tuple([d.squeeze(axis=1) for d in np.hsplit(s, n_vars)])
+        else:
+            # AR process
+            from statsmodels.tsa.arima_process import ArmaProcess
 
-        process = VARProcess(coefs, coefs_exog, sigma2, _params_info=_params_info)
-        s = np.empty(shape=(n_times + extend, n_vars, n_samples))
-        extend += n_lags
-        for i in range(n_samples):
-            s[..., i] = process.simulate_var(steps=n_times + extend).astype("float32")[
-                n_lags:
-            ]
-        s = [d.squeeze(axis=1) for d in np.hsplit(s, n_vars)]
-    else:
-        # AR process
-        from statsmodels.tsa.arima_process import ArmaProcess
-
-        process = ArmaProcess(np.concatenate(([1], -coefs.flatten())))
-        s = [
-            process.generate_sample(
-                nsample=(n_times + extend, n_samples),
+            process = ArmaProcess(np.concatenate(([1], -coefs.flatten())))
+            return process.generate_sample(
+                nsample=(n_times + extend_time, n_samples),
                 scale=np.sqrt(sigma2),
                 axis=0,
             ).astype("float32")
-        ]
 
-    s = xr.Dataset(
-        data_vars={v: (dims, d) for v, d in zip(variables, s)},
-        coords=coords,
+    variables = list(params.data_vars)
+    
+    n_lags_max = params["model_order"].max().item()
+    if n_members is not None:
+        extend_time = n_lags_max - 1 if n_lags_max > 0 else 0
+    elif rolling_means is None:
+        extend_time = 0
+    else:
+        extend_time = max(rolling_means) - 1
+    
+    samples = xr.apply_ufunc(
+        _generate_samples,
+        *[params[v] for v in variables],
+        kwargs=dict(extend_time=extend_time),
+        input_core_dims=[["params"]] * len(variables),
+        output_core_dims=[["time", "sample"]] * len(variables),
+        vectorize=True
     )
-
+    if len(variables) > 1:
+        samples = xr.merge([samp.to_dataset(name=var) for var, samp in zip(variables, samples)])
+    else:
+        samples = samples.to_dataset()  
+    
     if n_members is not None:
         n_leads = 1 if rolling_means is None else max(rolling_means)
-        s = predict(
+        samples = predict(
             params,
-            s,
-            n_leads,
+            samples,
+            n_steps=n_leads,
             n_members=n_members,
         )
-        s = s.rename({"init": "time"})
+        samples = samples.rename({"init": "time"})
 
     if rolling_means is not None:
         if n_members is not None:
             res = []
             for av in rolling_means:
-                rm = s.sel(lead=slice(1, av)).mean("lead")
+                rm = samples.sel(lead=slice(1, av)).mean("lead")
                 rm = rm.assign_coords({"rolling_mean": av})
                 res.append(rm)
         else:
             res = []
             for av in rolling_means:
                 rm = (
-                    s.rolling({"time": av}, min_periods=av, center=False)
+                    samples.rolling({"time": av}, min_periods=av, center=False)
                     .mean()
                     .dropna("time")
                 )
                 rm = rm.assign_coords({"rolling_mean": av})
                 res.append(rm)
 
-        s = xr.concat(res, dim="rolling_mean", join="inner")
-    s = s.assign_coords({"time": range(1, s.sizes["time"] + 1)})
-    s = s.assign_coords({"model_order": n_lags})
+        samples = xr.concat(res, dim="rolling_mean", join="inner")
+    samples = samples.assign_coords(
+        {"time": range(1, samples.sizes["time"] + 1), "sample": range(n_samples)}
+    )
+    samples = samples.assign_coords({"model_order": params["model_order"]})
 
-    return s.squeeze(drop=True)
+    return samples.squeeze(drop=True)
 
 
 def predict(params, inits, n_steps, n_members=1):
@@ -343,7 +348,8 @@ def predict(params, inits, n_steps, n_members=1):
     )
     sort_coefs = [f"{v}.lag{lag}" for lag in range(n_lags, 0, -1) for v in variables]
     coefs = np.column_stack([params.sel(params=sort_coefs)[v] for v in variables])
-
+    print(coefs.shape)
+    
     # Some quick checks
     assert inits.sizes["time"] >= n_lags, (
         f"At least {n_lags} initial conditions must be provided for an "
@@ -361,8 +367,8 @@ def predict(params, inits, n_steps, n_members=1):
             else:
                 return np.expand_dims(
                     np.random.normal(scale=np.sqrt(sigma2), size=size), -1
-                )
-
+                )   
+        
         if n_lags != 0:
             # Stack the inits as predictors, sorted so that they are ordered
             # consistently with the order of coefs
@@ -378,8 +384,11 @@ def predict(params, inits, n_steps, n_members=1):
             res = np.empty(shape, dtype="float32")
             res[..., :n_coefs] = inits_lagged
             for step in range(n_coefs, n_vars * n_steps + n_coefs, n_vars):
+                print(res[..., step - n_coefs : step].shape)
+                print(coefs.shape)
+                print(res[..., step - n_coefs : step] @ coefs)
                 fwd = np.matmul(res[..., step - n_coefs : step], coefs)
-
+                print(fwd.shape)
                 # Add noise
                 fwd += _get_noise(sigma2, fwd.shape[:-1])
                 res[..., step : step + n_vars] = fwd
@@ -521,13 +530,20 @@ def generate_samples_like(
             )
             if "member" in ds.dims:
                 ax.fill_between(
-                    range(1, len(ds_m[v]) + 1),
+                    range(1, ds_m[v].sizes["time"] + 1),
                     ds_r[0][v],
                     ds_r[1][v],
                     label="_nolabel_",
                     color="k",
                     edgecolor="none",
                     alpha=alpha,
+                )
+                ax.plot(
+                    range(1, ds_m[v].sizes["time"] + 1),
+                    ds[v].isel(member=0),
+                    label="Input _nolabel_",
+                    linestyle="--",
+                    color="k",
                 )
             ax.plot(
                 range(1, ds_m[v].sizes["time"] + 1),
