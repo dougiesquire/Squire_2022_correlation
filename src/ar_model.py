@@ -1,6 +1,8 @@
 "Tools for working with (Vector) Autoregressive models"
 
 
+from mxnet import np as mxnp
+
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
 
@@ -236,7 +238,7 @@ def generate_samples(params, n_times, n_samples, n_members=None, rolling_means=N
                 samples[..., i] = process.simulate_var(steps=n_times + extend_time).astype(
                     "float32"
                 )[n_lags:]
-            return tuple([d.squeeze(axis=1) for d in np.hsplit(s, n_vars)])
+            return tuple([d.squeeze(axis=1) for d in np.hsplit(samples, n_vars)])
         else:
             # AR process
             from statsmodels.tsa.arima_process import ArmaProcess
@@ -308,7 +310,7 @@ def generate_samples(params, n_times, n_samples, n_members=None, rolling_means=N
     return samples.squeeze(drop=True)
 
 
-def predict(params, inits, n_steps, n_members=1):
+def predict_old(params, inits, n_steps, n_members=1):
     """
     Advance a (Vector) Autoregressive model forward in time from initial conditions
     by n_steps
@@ -419,6 +421,170 @@ def predict(params, inits, n_steps, n_members=1):
         },
         input_core_dims=len(variables) * [["time"]],
         output_core_dims=len(variables) * [["time", "member", "lead"]],
+        exclude_dims=set(["time"]),
+    )
+
+    if len(variables) > 1:
+        pred = xr.merge([p.to_dataset(name=v) for v, p in zip(variables, pred)])
+    else:
+        pred = pred.to_dataset()
+    pred = pred.rename({"time": "init"})
+    first_init_idx = 0 if n_lags == 0 else n_lags - 1
+    coords = {
+        "member": range(n_members),
+        "init": inits["time"].values[first_init_idx:],
+        "lead": range(1, n_steps + 1),
+        **inits.drop("time").coords,
+    }
+    return pred.assign_coords(coords)
+
+
+def predict(params, inits, n_steps, n_members=1):
+    """
+    Advance a (Vector) Autoregressive model forward in time from initial conditions
+    by n_steps
+
+    Parameters
+    ----------
+    params : xarray Dataset
+        The (V)AR parameters as output by ar_model.fit().
+    inits : xarray Dataset
+        Dataset containing the initial conditions for the predictions. Must have
+        the same variables as params and a "time" dimension
+    n_steps : int
+        The number of timesteps to step forward from each initial condition
+    n_members : int
+        The number of ensemble members to run from each initial condition. Members
+        differ only in their realisation of the (V)AR noise component
+
+    Returns
+    -------
+    prediction : xarray Dataset
+        The predictions made from each initial condition
+    """
+
+    variables = list(params.data_vars)
+    n_vars = len(variables)
+    n_coefs = int(params.sizes["params"] - n_vars)
+    n_lags = int(n_coefs / n_vars)
+
+    # Fill NaNs with zeros (Nans come about if there are multiple models with different
+    # orders)
+    params = params.fillna(0)
+
+    # Ensure params is the last dimension, and shared dimensions are in the right
+    # place for broadcasting during matmul
+    shared_dims = [d for d in inits.dims if d in params.dims]
+    params = params.transpose(*shared_dims, "params")
+    inits = inits.transpose(..., *shared_dims, "time")
+
+    # Reorder the coefs so that they can be easily matmul'd by the predictors and
+    # then appended to predictors to make the next prediction. I.e. reorder from
+    # the input order:
+    # var1_lag1, ..., varN_lag1, ..., var1_lagM, ..., varN_lagM
+    # to:
+    # var1_lagM, ..., varN_lagM, ..., var1_lag1, ..., varN_lag1
+    sigma2 = np.stack(
+        [params[v].isel(params=slice(-len(variables), None)) for v in variables],
+        axis=-1,
+    )
+    sort_coefs = [f"{v}.lag{lag}" for lag in range(n_lags, 0, -1) for v in variables]
+    coefs = np.stack(
+        [params[v].sel(params=sort_coefs) for v in variables],
+        axis=-1,
+    )
+
+    # Some quick checks
+    assert inits.sizes["time"] >= n_lags, (
+        f"At least {n_lags} initial conditions must be provided for an "
+        f"AR({n_lags}) model"
+    )
+
+    def _predict(*inits, coefs, sigma2, n_steps, n_members):
+        """Advance a (V)AR model from initial conditions"""
+
+        def _get_noise(sigma2, size):
+            if sigma2.shape[-1] > 1:
+                # Use mxnet because it allows cov to have shape (..., N,N)
+                # This approach fails if the noise is exactly zero
+                # mean = mxnp.zeros(sigma2.shape[-1], dtype=sigma2.dtype)
+                # cov = mxnp.array(sigma2)
+                # noise = mxnp.random.multivariate_normal(
+                #     mean, cov, size=size
+                # ).asnumpy()
+                # print(mean)
+                # print(cov)
+                # # print(noise)
+                # print("\n")
+                
+                mean = np.zeros(sigma2.shape[-1])
+                cov = sigma2
+                noise = np.random.RandomState().multivariate_normal(
+                    mean, cov, size=size
+                )
+                print(mean)
+                print(cov)
+                # print(noise)
+                return noise
+            else:
+                return np.expand_dims(
+                    np.random.normal(scale=np.sqrt(sigma2), size=size), -1
+                )
+
+        if n_lags != 0:
+            # Stack the inits as predictors, sorted so that they are ordered
+            # consistently with the order of coefs
+            inits_lagged = [
+                sliding_window_view(init, window_shape=n_lags, axis=-1)
+                for init in inits
+            ]
+            inits_lagged = np.stack(inits_lagged, axis=-1).reshape(
+                inits_lagged[0].shape[:-1] + (-1,), order="C"
+            )
+            
+            # Move init axis to 0 to make broadcasting easier
+            inits_lagged = np.moveaxis(inits_lagged, -2, 0)
+
+            shape = (n_members, *inits_lagged.shape[:-1], n_vars * n_steps + n_coefs)
+            res = np.empty(shape, dtype="float32")
+            res[..., :n_coefs] = inits_lagged
+            for step in range(n_coefs, n_vars * n_steps + n_coefs, n_vars):
+                # Expand then squeeze dummy axes for matrix multiplication
+                predictors = np.expand_dims(res[..., step - n_coefs : step], -2)
+                predicted = np.squeeze(np.matmul(predictors, coefs), -2)
+                
+                # Add noise
+                size = predicted.shape[:-(sigma2.ndim - 1)]
+                noise = _get_noise(sigma2, size)
+                predicted += noise
+                res[..., step : step + n_vars] = predicted
+
+            # Drop the first n_coefs steps, which correspond to the initial conditions
+            res = res[..., n_coefs:]
+        else:
+            shape = (n_members, *inits[0].shape)
+            res = np.concatenate(
+                [_get_noise(sigma2, shape) for step in range(n_steps)], axis=-1
+            )
+            
+        # Split into variables and move member (0) and time (1) axis to -3 and -2
+        if n_vars > 1:
+            res = [np.moveaxis(res[..., i::n_vars], [0,1], [-3,-2]) for i in range(n_vars)]
+            return tuple(res)
+        else:
+            return np.moveaxis(res, [0,1], [-3,-2])
+
+    pred = xr.apply_ufunc(
+        _predict,
+        *[inits[v] for v in variables],
+        kwargs={
+            "coefs": coefs,
+            "sigma2": sigma2,
+            "n_steps": n_steps,
+            "n_members": n_members,
+        },
+        input_core_dims=len(variables) * [["time"]],
+        output_core_dims=len(variables) * [["member", "time", "lead"]],
         exclude_dims=set(["time"]),
     )
 
