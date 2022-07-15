@@ -1,7 +1,11 @@
 "Tools for working with (Vector) Autoregressive models"
 
 
-from mxnet import np as mxnp
+import os
+
+import sys
+
+import jax
 
 import numpy as np
 from numpy.lib.stride_tricks import sliding_window_view
@@ -177,7 +181,7 @@ def fit(
     return params
 
 
-def generate_samples(params, n_times, n_samples, n_members=None, rolling_means=None):
+def generate_samples(params, n_times, n_samples, n_members=None, rolling_means=None, seed=None):
     """
     Generate random samples from a (Vector) Autoregressive process.
 
@@ -196,13 +200,17 @@ def generate_samples(params, n_times, n_samples, n_members=None, rolling_means=N
         are computed by averaging prediction times 1->L.
     rolling_means : list, optional
         A list of lengths of rolling means to compute
+    seed : int, optional
+        Seed for the generation of random noise. If seed is None, then will 
+        try to generate seed from /dev/urandom (or the Windows analogue) if 
+        available
 
     Returns
     -------
     samples : xarray Dataset
         Simulations of the (V)AR process
     """
-    def _generate_samples(*params, extend_time):
+    def _generate_samples(*params, extend_time, seed):
         """Generate samples of (V)AR process with specified params"""
         n_vars = len(params)
 
@@ -232,22 +240,27 @@ def generate_samples(params, n_times, n_samples, n_members=None, rolling_means=N
             }
 
             process = VARProcess(coefs, coefs_exog, sigma2, _params_info=_params_info)
-            samples = np.empty(shape=(n_times + extend_time, n_vars, n_samples))
+            samples = np.empty(shape=(n_samples, n_times + extend_time, n_vars))
             extend_time += n_lags
-            for i in range(n_samples):
-                samples[..., i] = process.simulate_var(steps=n_times + extend_time).astype(
+            samples = process.simulate_var(steps=n_times + extend_time, seed=seed, nsimulations=n_samples).astype(
                     "float32"
-                )[n_lags:]
+                )
+            
+            # Move samples dimension (0) to last place
+            samples = np.moveaxis(samples, 0, -1)
+            samples = samples[n_lags:]
             return tuple([d.squeeze(axis=1) for d in np.hsplit(samples, n_vars)])
         else:
             # AR process
             from statsmodels.tsa.arima_process import ArmaProcess
 
             process = ArmaProcess(np.concatenate(([1], -coefs.flatten())))
+            state = np.random.RandomState(seed)
             return process.generate_sample(
                 nsample=(n_times + extend_time, n_samples),
                 scale=np.sqrt(sigma2),
                 axis=0,
+                distrvs=state.standard_normal
             ).astype("float32")
 
     variables = list(params.data_vars)
@@ -263,7 +276,7 @@ def generate_samples(params, n_times, n_samples, n_members=None, rolling_means=N
     samples = xr.apply_ufunc(
         _generate_samples,
         *[params[v] for v in variables],
-        kwargs=dict(extend_time=extend_time),
+        kwargs=dict(extend_time=extend_time, seed=seed),
         input_core_dims=[["params"]] * len(variables),
         output_core_dims=[["time", "sample"]] * len(variables),
         vectorize=True
@@ -439,7 +452,7 @@ def predict_old(params, inits, n_steps, n_members=1):
     return pred.assign_coords(coords)
 
 
-def predict(params, inits, n_steps, n_members=1):
+def predict(params, inits, n_steps, n_members=1, seed=None):
     """
     Advance a (Vector) Autoregressive model forward in time from initial conditions
     by n_steps
@@ -453,10 +466,14 @@ def predict(params, inits, n_steps, n_members=1):
         the same variables as params and a "time" dimension
     n_steps : int
         The number of timesteps to step forward from each initial condition
-    n_members : int
+    n_members : int. optional
         The number of ensemble members to run from each initial condition. Members
         differ only in their realisation of the (V)AR noise component
-
+    seed : int, optional
+        Seed for the generation of random noise. Note that setting this value will
+        mean that the same seed (hence noise) is used for every prediction step.
+        If seed is None, then will try to generate seed from /dev/urandom (or the 
+        Windows analogue) if available.
     Returns
     -------
     prediction : xarray Dataset
@@ -500,35 +517,38 @@ def predict(params, inits, n_steps, n_members=1):
         f"AR({n_lags}) model"
     )
 
-    def _predict(*inits, coefs, sigma2, n_steps, n_members):
+    def _predict(*inits, coefs, sigma2, n_steps, n_members, seed):
         """Advance a (V)AR model from initial conditions"""
 
-        def _get_noise(sigma2, size):
+        def _get_noise(sigma2, size, seed):
+            if seed is None:
+                # Generate seed from /dev/urandom/
+                seed = int.from_bytes(os.urandom(4), sys.byteorder)
+                    
             if sigma2.shape[-1] > 1:
-                # Use mxnet because it allows cov to have shape (..., N,N)
-                # This approach fails if the noise is exactly zero
-                # mean = mxnp.zeros(sigma2.shape[-1], dtype=sigma2.dtype)
-                # cov = mxnp.array(sigma2)
-                # noise = mxnp.random.multivariate_normal(
-                #     mean, cov, size=size
-                # ).asnumpy()
-                # print(mean)
-                # print(cov)
-                # # print(noise)
-                # print("\n")
-                
+                # Use jax because it allows cov to have shape (..., N,N)
+                # Note, I also tried mxnp.random.multivariate_normal but this
+                # produced unexpected behaviour (see 
+                # https://github.com/apache/incubator-mxnet/issues/21095)
+                key = jax.random.PRNGKey(seed)
                 mean = np.zeros(sigma2.shape[-1])
                 cov = sigma2
-                noise = np.random.RandomState().multivariate_normal(
-                    mean, cov, size=size
+                noise = np.array(
+                    jax.random.multivariate_normal(key, mean, cov, shape=size)
                 )
-                print(mean)
-                print(cov)
-                # print(noise)
+
+                # state = np.random.RandomState(seed)
+                # mean = np.zeros(sigma2.shape[-1])
+                # cov = sigma2
+                # noise = state.multivariate_normal(
+                #     mean, cov, size=size
+                # )
+
                 return noise
             else:
+                state = np.random.RandomState(seed)
                 return np.expand_dims(
-                    np.random.normal(scale=np.sqrt(sigma2), size=size), -1
+                    state.normal(scale=np.sqrt(sigma2), size=size), -1
                 )
 
         if n_lags != 0:
@@ -555,7 +575,7 @@ def predict(params, inits, n_steps, n_members=1):
                 
                 # Add noise
                 size = predicted.shape[:-(sigma2.ndim - 1)]
-                noise = _get_noise(sigma2, size)
+                noise = _get_noise(sigma2, size, seed)
                 predicted += noise
                 res[..., step : step + n_vars] = predicted
 
@@ -582,6 +602,7 @@ def predict(params, inits, n_steps, n_members=1):
             "sigma2": sigma2,
             "n_steps": n_steps,
             "n_members": n_members,
+            "seed": seed,
         },
         input_core_dims=len(variables) * [["time"]],
         output_core_dims=len(variables) * [["member", "time", "lead"]],
