@@ -1,4 +1,4 @@
-""" 
+"""
 Functions for preparing data
 
 CMIP6 DCPP datasets on NCI that are not included
@@ -407,7 +407,7 @@ def prepare_HadGEM3_GC31_MM(experiments, realm, variables, save_as=None):
         return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
     else:
         return ds
-    
+
 
 def prepare_CMCC_CM2_SR5(experiments, realm, variables, save_as=None):
     """
@@ -464,7 +464,7 @@ def prepare_CMCC_CM2_SR5(experiments, realm, variables, save_as=None):
         elif exp == "historical":
             exp_spec["dcpp_start_years"] = None
             # Only member 1 is i1p1f1
-            exp_spec["members"] = [1] 
+            exp_spec["members"] = [1]
             exp_spec["version"] = "latest"
         else:
             raise ValueError("Please set up specs dict for this experiement")
@@ -941,8 +941,8 @@ def prepare_NorCPM1(experiments, realm, variables, save_as=None):
         return xr.open_zarr(f"{PROCESSED_DATA_DIR}/{save_as}.zarr")
     else:
         return ds
-    
-    
+
+
 def prepare_MRI_ESM2_0(experiments, realm, variables, save_as=None):
     """
     Open/save MRI-ESM2-0 from specified experiment(s) and monthly realm,

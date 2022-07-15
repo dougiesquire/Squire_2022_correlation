@@ -18,7 +18,7 @@ def main():
     logger.info("Spinning up a dask cluster")
     local_directory = tempfile.TemporaryDirectory()
     with Client(processes=False, local_directory=local_directory.name):
-        
+
         # logger.info("Preparing HadGEM3-GC31-MM data")
         # _ = data.prepare_HadGEM3_GC31_MM(
         #     ["dcppA-hindcast", "dcppB-forecast"],
@@ -53,10 +53,7 @@ def main():
         #     "psl_Amon_EC-Earth3_dcpp"
         # )
         _ = data.prepare_EC_Earth3(
-            ["historical"],
-            "Amon",
-            ["psl"],
-            "psl_Amon_EC-Earth3_historical"
+            ["historical"], "Amon", ["psl"], "psl_Amon_EC-Earth3_historical"
         )
         # _ = data.prepare_EC_Earth3(
         #     ["dcppA-hindcast"],
@@ -65,10 +62,7 @@ def main():
         #     "tos_Omon_EC-Earth3_dcpp"
         # )
         _ = data.prepare_EC_Earth3(
-            ["historical"],
-            "Omon",
-            ["tos"],
-            "tos_Omon_EC-Earth3_historical"
+            ["historical"], "Omon", ["tos"], "tos_Omon_EC-Earth3_historical"
         )
 
         # logger.info("Preparing CanESM5 data")
@@ -213,7 +207,7 @@ def main():
         #     ["tos"],
         #     "tos_Omon_NorCPM1_historical"
         # )
-        
+
         # logger.info("Preparing CMCC-CM2-SR5")
         # _ = data.prepare_CMCC_CM2_SR5(
         #     ["dcppA-hindcast", "dcppB-forecast"],
@@ -239,7 +233,7 @@ def main():
         #     ["tos"],
         #     "tos_Omon_CMCC-CM2-SR5_historical"
         # )
-        
+
         # logger.info("Preparing MRI-ESM2-0")
         # _ = data.prepare_MRI_ESM2_0(
         #     ["dcppA-hindcast"],

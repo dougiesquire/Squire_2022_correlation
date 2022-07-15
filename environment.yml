@@ -34,7 +34,7 @@ dependencies:
   - cartopy=0.20.2=py310hb89acbc_4
   - cdo=2.0.5=h2e6804c_0
   - certifi=2022.6.15=py310hff52083_0
-  - cf_xarray=0.7.2=pyhd8ed1ab_0
+  - cf_xarray=0.7.3=pyhd8ed1ab_0
   - cffi=1.15.0=py310h0fdd8cc_0
   - cftime=1.6.0=py310hde88566_1
   - charset-normalizer=2.0.12=pyhd8ed1ab_0
@@ -47,8 +47,8 @@ dependencies:
   - curl=7.83.1=h7bff187_0
   - cycler=0.11.0=pyhd8ed1ab_0
   - cytoolz=0.11.2=py310h5764c6d_2
-  - dask=2022.6.1=pyhd8ed1ab_0
-  - dask-core=2022.6.1=pyhd8ed1ab_0
+  - dask=2022.5.1=pyhd8ed1ab_0
+  - dask-core=2022.5.1=pyhd8ed1ab_0
   - dask-jobqueue=0.7.3=pyhd8ed1ab_0
   - dask-labextension=5.2.0=pyhd8ed1ab_0
   - dataclasses=0.8=pyhc8e2a94_3
@@ -56,7 +56,7 @@ dependencies:
   - debugpy=1.6.0=py310hd8f1fbe_0
   - decorator=5.1.1=pyhd8ed1ab_0
   - defusedxml=0.7.1=pyhd8ed1ab_0
-  - distributed=2022.6.1=pyhd8ed1ab_0
+  - distributed=2022.5.1=pyhd8ed1ab_0
   - eccodes=2.26.0=hc08acdf_0
   - entrypoints=0.4=pyhd8ed1ab_0
   - esmf=8.2.0=nompi_h61edca3_0
@@ -218,7 +218,7 @@ dependencies:
   - numcodecs=0.9.1=py310h122e73d_2
   - numpy=1.21.6=py310h45f3432_0
   - openjpeg=2.4.0=hb52868f_1
-  - openssl=1.1.1p=h166bdaf_0
+  - openssl=1.1.1q=h166bdaf_0
   - ossuuid=1.6.2=hf484d3e_1000
   - packaging=21.3=pyhd8ed1ab_0
   - pandas=1.4.2=py310h769672d_2
@@ -233,7 +233,6 @@ dependencies:
   - pexpect=4.8.0=pyh9f0ad1d_2
   - pickleshare=0.7.5=py_1003
   - pillow=9.1.1=py310he619898_0
-  - pip=22.1.1=pyhd8ed1ab_0
   - pixman=0.40.0=h36c2ea0_0
   - platformdirs=2.5.1=pyhd8ed1ab_0
   - pluggy=1.0.0=py310hff52083_3
@@ -291,7 +290,6 @@ dependencies:
   - sparse=0.13.0=pyhd8ed1ab_0
   - sqlite=3.38.5=h4ff8645_0
   - stack_data=0.2.0=pyhd8ed1ab_0
-  - statsmodels=0.13.2=py310h96516ba_0
   - tblib=1.7.0=pyhd8ed1ab_0
   - terminado=0.15.0=py310hff52083_0
   - threadpoolctl=3.1.0=pyh8a188c0_0
@@ -346,3 +344,12 @@ dependencies:
   - zstd=1.5.2=h8a70e8d_1
   - pip:
     - -e .
+    - absl-py==1.1.0
+    - etils==0.6.0
+    - flatbuffers==2.0
+    - jax==0.3.14
+    - jaxlib==0.3.14
+    - opt-einsum==3.3.0
+    - pip==22.1.2
+    - python-graphviz==0.8.4
+    - statsmodels==0.14.0.dev485+g7182400ef
