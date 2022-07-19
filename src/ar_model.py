@@ -82,6 +82,7 @@ def fit(
         - For AR model with n_lags specified: sm.tsa.ar_model.AutoReg
         - For AR model with n_lags="select_order": sm.tsa.ar_model.ar_select_order
         - For VAR model with n_lags specified: sm.tsa.api.VAR
+        Note, {"trend": "n"} is always added to kwargs
 
     Returns
     -------
@@ -198,7 +199,7 @@ def generate_samples(
         The number of samples to generate
     n_members : int, optional
         The number of ensemble members to generate. N ensemble members are
-        generated from N predictions initialised from samples of the provided
+        generated from N predictions initialised from a sample of the provided
         process. When provided with temporal_means, means of length L
         are computed by averaging prediction times 1->L.
     temporal_means : list, optional
@@ -269,7 +270,7 @@ def generate_samples(
 
     variables = list(params.data_vars)
 
-    n_lags_max = params["model_order"].max().item()
+    n_lags_max = int((params.sizes["params"] - len(variables)) / len(variables))
     if n_members is not None:
         extend_time = n_lags_max - 1 if n_lags_max > 0 else 0
     elif temporal_means is None:
@@ -329,7 +330,8 @@ def generate_samples(
     samples = samples.assign_coords(
         {"time": range(1, samples.sizes["time"] + 1), "sample": range(n_samples)}
     )
-    samples = samples.assign_coords({"model_order": params["model_order"]})
+    if "model_order" in params:
+        samples = samples.assign_coords({"model_order": params["model_order"]})
 
     return samples.squeeze(drop=True)
 
@@ -539,7 +541,7 @@ def generate_samples_like(
         The number of samples to generate
     n_members : int, optional
         The number of ensemble members to generate. N ensemble members are
-        generated from N predictions initialised from samples of the provided
+        generated from N predictions initialised from a sample of the provided
         process. When provided with temporal_mean, rolling means of length L
         are computed by averaging prediction times 1->L.
     temporal_means : list, optional

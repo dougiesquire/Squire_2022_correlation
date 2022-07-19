@@ -314,7 +314,7 @@ def coarsen(ds, window_size, dim, start_points=None):
     return xr.concat(dss, dim=dim).sortby(dim)
 
 
-def get_hindcast_mean(hcst, mean_lead_range=[(0, 1)]):
+def get_hindcast_temporal_mean(hcst, mean_lead_ranges=[(0, 1)]):
     """
     Given annual hindcasts, return the hindcast over a specified averaging
     period. Averages are taken over the lead dimension. The time assigned
@@ -323,27 +323,28 @@ def get_hindcast_mean(hcst, mean_lead_range=[(0, 1)]):
     hcst : xarray object
         The annual hindcast data
     mean_lead_range : list of tuple
-        A list of lead year ranges to average over. Lead year ranges include
-        the first element in the tuple, but not the last. E.g. (0,1) averages
-        over lead year 0, (1,5) averages over years 1-4 etc
+        A list of lead year ranges to average over, specified as indexers. not
+        coordinate values. Lead year ranges include the first element in the
+        tuple, but not the last. E.g. (0,1) averages over lead year 0, (1,5)
+        averages over years 1-4 etc.
     """
 
     res = []
-    for r in mean_lead_range:
+    for r in mean_lead_ranges:
         hcst_mean = hcst.isel(lead=slice(*r))
         hcst_mean = hcst_mean.assign_coords(
             {"time": hcst_mean.time.isel(lead=-1, drop=True)}
         ).mean("lead")
         hcst_mean = hcst_mean.swap_dims({"init": "time"})
-        res.append(hcst_mean.assign_coords({"rolling_mean": r[1] - r[0]}))
-    res = xr.concat(res, dim="rolling_mean")
-    if res.sizes["rolling_mean"] == 1:
-        res.squeeze("rolling_mean")
+        res.append(hcst_mean.assign_coords({"temporal_mean": r[1] - r[0]}))
+    res = xr.concat(res, dim="temporal_mean")
+    if res.sizes["temporal_mean"] == 1:
+        return res.squeeze("temporal_mean")
     else:
         return res
 
 
-def get_observation_rolling_mean(ds, rolling_mean):
+def get_observation_temporal_mean(ds, temporal_means):
     """
     Return the specified rolling means along the time dimension
 
@@ -353,14 +354,14 @@ def get_observation_rolling_mean(ds, rolling_mean):
         A list of window lengths
     """
     res = []
-    for av in rolling_mean:
+    for av in temporal_means:
         rm = (
             ds.rolling({"time": av}, min_periods=av, center=False).mean().dropna("time")
         )
-        rm = rm.assign_coords({"rolling_mean": av})
+        rm = rm.assign_coords({"temporal_mean": av})
         res.append(rm)
-    res = xr.concat(res, dim="rolling_mean")
-    if res.sizes["rolling_mean"] == 1:
-        res.squeeze("rolling_mean")
+    res = xr.concat(res, dim="temporal_mean")
+    if res.sizes["temporal_mean"] == 1:
+        return res.squeeze("temporal_mean")
     else:
         return res

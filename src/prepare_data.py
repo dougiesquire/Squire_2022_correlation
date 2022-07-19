@@ -45,25 +45,25 @@ def main():
         #     "tos_Omon_HadGEM3-GC31-MM_historical"
         # )
 
-        logger.info("Preparing EC-Earth3 data")
+        # logger.info("Preparing EC-Earth3 data")
         # _ = data.prepare_EC_Earth3(
         #     ["dcppA-hindcast"],
         #     "Amon",
         #     ["psl"],
         #     "psl_Amon_EC-Earth3_dcpp"
         # )
-        _ = data.prepare_EC_Earth3(
-            ["historical"], "Amon", ["psl"], "psl_Amon_EC-Earth3_historical"
-        )
+        # _ = data.prepare_EC_Earth3(
+        #     ["historical"], "Amon", ["psl"], "psl_Amon_EC-Earth3_historical"
+        # )
         # _ = data.prepare_EC_Earth3(
         #     ["dcppA-hindcast"],
         #     "Omon",
         #     ["tos"],
         #     "tos_Omon_EC-Earth3_dcpp"
         # )
-        _ = data.prepare_EC_Earth3(
-            ["historical"], "Omon", ["tos"], "tos_Omon_EC-Earth3_historical"
-        )
+        # _ = data.prepare_EC_Earth3(
+        #     ["historical"], "Omon", ["tos"], "tos_Omon_EC-Earth3_historical"
+        # )
 
         # logger.info("Preparing CanESM5 data")
         # _ = data.prepare_CanESM5(
@@ -234,20 +234,19 @@ def main():
         #     "tos_Omon_CMCC-CM2-SR5_historical"
         # )
 
-        # logger.info("Preparing MRI-ESM2-0")
+        logger.info("Preparing MRI-ESM2-0")
         # _ = data.prepare_MRI_ESM2_0(
         #     ["dcppA-hindcast"],
         #     "Amon",
         #     ["psl"],
         #     "psl_Amon_MRI-ESM2-0_dcpp"
         # )
-        # DATA REQUEST LODGED
-        # _ = data.prepare_MRI_ESM2_0(
-        #     ["historical"],
-        #     "Amon",
-        #     ["psl"],
-        #     "psl_Amon_MRI-ESM2-0_historical"
-        # )
+        _ = data.prepare_MRI_ESM2_0(
+            ["historical"],
+            "Amon",
+            ["psl"],
+            "psl_Amon_MRI-ESM2-0_historical"
+        )
         # _ = data.prepare_MRI_ESM2_0(
         #     ["dcppA-hindcast"],
         #     "Omon",
