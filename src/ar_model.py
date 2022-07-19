@@ -183,7 +183,7 @@ def fit(
 
 
 def generate_samples(
-    params, n_times, n_samples, n_members=None, rolling_means=None, seed=None
+    params, n_times, n_samples, n_members=None, temporal_means=None, seed=None
 ):
     """
     Generate random samples from a (Vector) Autoregressive process.
@@ -199,9 +199,9 @@ def generate_samples(
     n_members : int, optional
         The number of ensemble members to generate. N ensemble members are
         generated from N predictions initialised from samples of the provided
-        process. When provided with rolling_mean, rolling means of length L
+        process. When provided with temporal_means, means of length L
         are computed by averaging prediction times 1->L.
-    rolling_means : list, optional
+    temporal_means : list, optional
         A list of lengths of rolling means to compute
     seed : int, optional
         Seed for the generation of random noise. If seed is None, then will
@@ -272,10 +272,10 @@ def generate_samples(
     n_lags_max = params["model_order"].max().item()
     if n_members is not None:
         extend_time = n_lags_max - 1 if n_lags_max > 0 else 0
-    elif rolling_means is None:
+    elif temporal_means is None:
         extend_time = 0
     else:
-        extend_time = max(rolling_means) - 1
+        extend_time = max(temporal_means) - 1
 
     samples = xr.apply_ufunc(
         _generate_samples,
@@ -298,7 +298,7 @@ def generate_samples(
     })
 
     if n_members is not None:
-        n_leads = 1 if rolling_means is None else max(rolling_means)
+        n_leads = 1 if temporal_means is None else max(temporal_means)
         samples = predict(
             params,
             samples,
@@ -307,25 +307,25 @@ def generate_samples(
         )
         samples = samples.rename({"init": "time"})
 
-    if rolling_means is not None:
+    if temporal_means is not None:
         if n_members is not None:
             res = []
-            for av in rolling_means:
+            for av in temporal_means:
                 rm = samples.sel(lead=slice(1, av)).mean("lead")
-                rm = rm.assign_coords({"rolling_mean": av})
+                rm = rm.assign_coords({"temporal_mean": av})
                 res.append(rm)
         else:
             res = []
-            for av in rolling_means:
+            for av in temporal_means:
                 rm = (
                     samples.rolling({"time": av}, min_periods=av, center=False)
                     .mean()
                     .dropna("time")
                 )
-                rm = rm.assign_coords({"rolling_mean": av})
+                rm = rm.assign_coords({"temporal_mean": av})
                 res.append(rm)
 
-        samples = xr.concat(res, dim="rolling_mean", join="inner")
+        samples = xr.concat(res, dim="temporal_mean", join="inner")
     samples = samples.assign_coords(
         {"time": range(1, samples.sizes["time"] + 1), "sample": range(n_samples)}
     )
@@ -514,7 +514,7 @@ def generate_samples_like(
     n_times,
     n_samples,
     n_members=None,
-    rolling_means=None,
+    temporal_means=None,
     fit_kwargs={},
     plot_diagnostics=True,
 ):
@@ -540,9 +540,9 @@ def generate_samples_like(
     n_members : int, optional
         The number of ensemble members to generate. N ensemble members are
         generated from N predictions initialised from samples of the provided
-        process. When provided with rolling_mean, rolling means of length L
+        process. When provided with temporal_mean, rolling means of length L
         are computed by averaging prediction times 1->L.
-    rolling_means : list, optional
+    temporal_means : list, optional
         A list of lengths of rolling means to compute
     fit_kwargs : dict, optional
         kwargs to pass to ar_model.fit()
@@ -560,7 +560,7 @@ def generate_samples_like(
         n_times=n_times,
         n_samples=n_samples,
         n_members=n_members,
-        rolling_means=rolling_means,
+        temporal_means=temporal_means,
     )
 
     if plot_diagnostics:
@@ -695,7 +695,7 @@ def generate_samples_like(
                 ax.set_title("")
 
         # Example forecasts
-        n_leads = max(rolling_means) if rolling_means is not None else 10
+        n_leads = max(temporal_means) if temporal_means is not None else 10
         n_mem = n_members if n_members is not None else 50
         init = expl.isel(sample=0)
         fcst = predict(
@@ -759,9 +759,9 @@ def generate_samples_like(
                     sample=np.random.randint(0, high=len(samples_plot.sample))
                 )
 
-            if "rolling_mean" in samples.dims:
-                av = samples_plot.rolling_mean.values[-1]
-                samples_plot = samples_plot.sel(rolling_mean=av)
+            if "temporal_mean" in samples.dims:
+                av = samples_plot.temporal_mean.values[-1]
+                samples_plot = samples_plot.sel(temporal_mean=av)
                 ds_plot = ds_plot.rolling(
                     {"time": av}, min_periods=av, center=False
                 ).mean("time")
