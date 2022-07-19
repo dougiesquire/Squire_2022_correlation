@@ -291,6 +291,11 @@ def generate_samples(
         )
     else:
         samples = samples.to_dataset()
+        
+    samples = samples.assign_coords({
+        "time": range(1, samples.sizes["time"]+1),
+        "sample": range(n_samples)
+    })
 
     if n_members is not None:
         n_leads = 1 if rolling_means is None else max(rolling_means)
@@ -356,7 +361,7 @@ def predict(params, inits, n_steps, n_members=1, seed=None):
     prediction : xarray Dataset
         The predictions made from each initial condition
     """
-
+    
     variables = list(params.data_vars)
     n_vars = len(variables)
     n_coefs = int(params.sizes["params"] - n_vars)
