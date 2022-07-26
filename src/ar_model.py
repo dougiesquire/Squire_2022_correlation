@@ -20,6 +20,11 @@ from src import stats
 
 jax.config.update("jax_platform_name", "cpu")
 
+BYSTANDER_DIM = "bystander"
+STACK_DIM = "stack"
+PARAM_DIM = "params"
+DUMMY_DIM = "dummy"
+
 
 def yule_walker(ds, order, dim="time", kwargs={}):
     """
@@ -57,12 +62,46 @@ def yule_walker(ds, order, dim="time", kwargs={}):
     ).assign_coords({"coeff": range(order + 1)})
 
 
-def fit(
-    ds,
-    n_lags,
-    dim="time",
-    kwargs={},
-):
+def _prep_for_fit(ds, dim):
+    """
+    Prep a dataset for fitting. This function stacks data into a
+    3D array with dimensions `BYSTANDER_DIM`, `STACK_DIM` and `dim`
+
+    Also returns a list of dummy dimensions to be squeezed
+    """
+
+    ds_prepped = ds.copy()
+
+    stack_dims = []
+    dummy_dim = []
+
+    if dim == "lead":
+        stack_dims.append("init")
+
+    if "member" in ds.dims:
+        stack_dims.append("member")
+
+    bystander_dims = list(set(ds.dims) - set(stack_dims + [dim]))
+    to_stack = {BYSTANDER_DIM: bystander_dims}
+
+    # Ensure that there are always bystander and stack dims
+    if not stack_dims:
+        ds_prepped = ds_prepped.expand_dims(STACK_DIM)
+    else:
+        to_stack.update({STACK_DIM: stack_dims})
+
+    if not bystander_dims:
+        dummy_dim.append(DUMMY_DIM)
+        bystander_dims.append(DUMMY_DIM)
+        ds_prepped = ds_prepped.expand_dims(DUMMY_DIM)
+
+    dim_order = [BYSTANDER_DIM, STACK_DIM, dim]
+    ds_prepped = ds_prepped.stack(to_stack).transpose(*dim_order)
+
+    return ds_prepped, dummy_dim
+
+
+def fit(ds, n_lags, dim="time"):
     """
     Fit a (Vector) Autoregressive model(s)
 
@@ -70,31 +109,145 @@ def fit(
     ----------
     ds : xarray Dataset
         The data to fit the (V)AR model to. If multiple variables are available
-        in ds, a VAR model is fitted
+        in ds, a VAR model is fitted. If a "member" dimension is present, then
+        all elements along this dimension are fitted together
     n_lags : int or str
         The order of the (V)AR(n) process to fit. For single variable (AR)
         models, users can alternatively pass the string "select_order" to use
         statsmodels.tsa.ar_model.ar_select_order to determine the order.
     dim : str
-        The dimension along which to fit the AR model(s)
-    kwargs: dict, optional
-        kwargs to pass to the relevant statsmodels (sm) method
-        - For AR model with n_lags specified: sm.tsa.ar_model.AutoReg
-        - For AR model with n_lags="select_order": sm.tsa.ar_model.ar_select_order
-        - For VAR model with n_lags specified: sm.tsa.api.VAR
-        Note, {"trend": "n"} is always added to kwargs
+        The dimension along which to fit the AR model(s). If `dim="lead"`, then
+        all elements along the dimension "init" (assumed to be present) are
+        fitted together
 
     Returns
     -------
     params : xarray Dataset
-        The fitted (V)AR model parameters. For each variable, the first
-        n_vars*n_lags parameters along the "params" dimension correspond to the
-        (V)AR coefficients in the order output by
-        statsmodels.tsa.api.VAR(data).fit(n_lags, trend="n").params, i.e.:
-        [ϕ_var1_lag1, ..., ϕ_varN_lag1, ..., ϕ_var1_lagM, ..., ϕ_varN_lagM]
-        and the last n_vars parameters correspond to the noise (co)variances:
-        [sigma2_var1, ..., sigma2_varN]
+        The fitted (V)AR model parameters.
     """
+
+    def _get_predictor_lags(array, n_lags):
+        """
+        Expand new axis containing stacked lags along `dim` (last axis)
+        in the following order [lagM, ..., lag2, lag1] and then flatten
+        the `STACK_DIM` and `dim` axes
+        """
+        lags = sliding_window_view(array, window_shape=n_lags, axis=-1)[..., :-1, :]
+        return lags.reshape((lags.shape[0], lags.shape[1] * lags.shape[2], n_lags))
+
+    def _get_predictands(array, n_lags):
+        """
+        Extract the predictands corresponding to the predictor lags from
+        `_get_predictor_lags` and then flatten the `STACK_DIM` and `dim`
+        axes
+        """
+        resp = array[..., n_lags:]
+        return resp.reshape(resp.shape[0], resp.shape[1] * resp.shape[2])
+
+    def _var_lstsq(*data, n_lags):
+        """
+        Fit a (V)AR model to the input data
+
+        Each `data` array has dimensions `BYSTANDER_DIM`, `STACK_DIM` and `dim`
+        """
+
+        neqs = len(data)
+
+        # Stack array(s) like
+        # [var1_lagM, ..., var1_lag1, ..., varN_lagM, ..., varN_lag1]
+        predictor = np.concatenate(
+            [_get_predictor_lags(array, n_lags) for array in data], axis=-1
+        )
+        predictand = np.stack(
+            [_get_predictands(array, n_lags) for array in data], axis=-1
+        )
+
+        # Estimate the least squares coefs using the pseudo-inverse
+        pinv = np.linalg.pinv(predictor)
+        coefs = np.matmul(pinv, predictand)
+
+        # Calculate the variance of the residuals
+        resid = predictand - np.matmul(predictor, coefs)
+        sum_squared_error = np.matmul(np.swapaxes(resid, -1, -2), resid)
+        # Unbiased estimate of covariance matrix $\Sigma_u$ of the white noise
+        # process $u$, see Lütkepohl p.75
+        df_correction = neqs * n_lags if neqs > 1 else 0
+        df = predictor.shape[1] - df_correction
+        noise_var = sum_squared_error / df
+
+        params = np.concatenate((coefs, noise_var), -2)
+
+        # Unpack into variables
+        params = [params[..., i] for i in range(params.shape[-1])]
+
+        if len(params) > 1:
+            return tuple(params)
+        else:
+            return params[0]
+
+    variables = list(ds.data_vars)
+    n_params = len(variables) * n_lags + len(variables)
+
+    ds_prepped, to_squeeze = _prep_for_fit(ds, dim)
+
+    data = [ds_prepped[v] for v in ds_prepped]
+    input_core_dims = len(variables) * [[STACK_DIM, dim]]
+    output_core_dims = len(variables) * [["params"]]
+    output_dtypes = len(variables) * [float]
+    param_labels = [
+        f"{v}.lag{lag}" for v in variables for lag in range(n_lags, 0, -1)
+    ] + [f"{v}.noise_var" for v in variables]
+
+    params = xr.apply_ufunc(
+        _var_lstsq,
+        *data,
+        kwargs=dict(n_lags=n_lags),
+        input_core_dims=input_core_dims,
+        output_core_dims=output_core_dims,
+        dask="parallelized",
+        output_dtypes=output_dtypes,
+        dask_gufunc_kwargs=dict(output_sizes={PARAM_DIM: n_params}),
+    )
+
+    # Bundle back into a Dataset
+    if len(variables) > 1:
+        params = xr.merge(
+            [
+                p.unstack(BYSTANDER_DIM).to_dataset(name=v)
+                for v, p in zip(variables, params)
+            ]
+        )
+    else:
+        params = params.unstack(BYSTANDER_DIM).to_dataset()
+
+    params = params.squeeze(to_squeeze, drop=True)
+
+    model_order = (
+        (params[list(params.data_vars)[0]].count("params") - len(variables))
+        / len(variables)
+    ).astype(int)
+    params = params.assign_coords({"model_order": model_order})
+    params = params.assign_coords({PARAM_DIM: param_labels})
+
+    return params
+
+
+def select_order(ds, dim="time", maxlag=10, kwargs={"ic": "aic"}):
+    """
+    xarray wrapper for sm.tsa.ar_model.ar_select_order to select
+    and fit AR model base on specified information criterion
+
+    Parameters
+    ----------
+    ds : xarray Dataset
+        The data to fit the AR model(s) to.
+    dim : str
+        The dimension along which to fit the AR model(s)
+    kwargs: dict, optional
+        kwargs to pass to sm.tsa.ar_model.ar_select_order. Note,
+        {"trend": "n"} is always added to kwargs
+    """
+    from statsmodels.tsa.ar_model import ar_select_order
 
     def _ar_select_order(data, maxlag, kwargs):
         "Wrapper for statsmodels.tsa.ar_model.ar_select_order"
@@ -106,78 +259,34 @@ def fit(
         params[-1] = res.sigma2
         return params
 
-    def _ar(data, n_lags, kwargs):
-        "Wrapper for statsmodels.tsa.ar_model.AutoReg"
-        res = AutoReg(data, lags=n_lags, **kwargs).fit()
-        return np.concatenate((res.params, [res.sigma2]))
-
-    def _var(*data, n_lags, kwargs):
-        "Wrapper for statsmodels.tsa.api.VAR"
-        res = VAR(np.column_stack(data)).fit(n_lags, **kwargs)
-        params = np.vstack((res.params, res.sigma_u))
-        return tuple([params[:, i] for i in range(params.shape[1])])
-
     if "trend" in kwargs:
         if kwargs["trend"] != "n":
-            raise ValueError("The function does not support fitting with a trend")
+            raise ValueError("This function does not support fitting with a trend")
     else:
         kwargs["trend"] = "n"
 
-    variables = list(ds.data_vars)
-    if len(variables) > 1:
-        from statsmodels.tsa.api import VAR
+    variable = list(ds.data_vars)[0]
 
-        if n_lags == "select_order":
-            raise ValueError("Cannot use 'select_order' with a VAR model")
-        func = _var
-        kwargs = dict(n_lags=n_lags, kwargs=kwargs)
-        n_params = len(variables) * n_lags + len(variables)
-    else:
-        from statsmodels.tsa.ar_model import AutoReg, ar_select_order
-
-        if n_lags == "select_order":
-            assert (
-                "maxlag" in kwargs
-            ), "Must provide maxlag parameter to kwargs when using n_lags='select_order'"
-
-            func = _ar_select_order
-            maxlag = kwargs.pop("maxlag")
-            kwargs = dict(maxlag=maxlag, kwargs=kwargs)
-            n_params = kwargs["maxlag"] + 1
-            n_lags = n_params - 1
-        else:
-            func = _ar
-            kwargs = dict(n_lags=n_lags, kwargs=kwargs)
-            n_params = n_lags + 1
-
-    data = [ds[v] for v in ds]
-    input_core_dims = len(variables) * [[dim]]
-    output_core_dims = len(variables) * [["params"]]
-    output_dtypes = len(variables) * [float]
+    kwargs = dict(maxlag=maxlag, kwargs=kwargs)
+    n_params = kwargs["maxlag"] + 1
+    n_lags = n_params - 1
 
     params = xr.apply_ufunc(
-        func,
-        *data,
+        _ar_select_order,
+        ds,
         kwargs=kwargs,
-        input_core_dims=input_core_dims,
-        output_core_dims=output_core_dims,
+        input_core_dims=[[dim]],
+        output_core_dims=[["params"]],
         vectorize=True,
         dask="parallelized",
-        output_dtypes=output_dtypes,
+        output_dtypes=[float],
         dask_gufunc_kwargs=dict(output_sizes={"params": n_params}),
     )
-    if len(variables) > 1:
-        params = xr.merge([r.to_dataset(name=v) for v, r in zip(variables, params)])
-    else:
-        params = params.to_dataset()
 
-    param_labels = [
-        f"{v}.lag{lag}" for lag in range(1, n_lags + 1) for v in variables
-    ] + [f"{v}.noise_var" for v in variables]
-    model_order = (
-        (params[list(params.data_vars)[0]].count("params") - len(variables))
-        / len(variables)
-    ).astype(int)
+    param_labels = [f"{variable}.lag{lag}" for lag in range(1, n_lags + 1)] + [
+        "noise_var"
+    ]
+    model_order = (params[variable].count("params") - 1).astype(int)
     params = params.assign_coords({"model_order": model_order})
     params = params.assign_coords({"params": param_labels}).dropna("params", how="all")
     return params
@@ -380,10 +489,7 @@ def predict(params, inits, n_steps, n_members=1, seed=None):
     inits = inits.transpose(..., *shared_dims, "time")
 
     # Reorder the coefs so that they can be easily matmul'd by the predictors and
-    # then appended to predictors to make the next prediction. I.e. reorder from
-    # the input order:
-    # var1_lag1, ..., varN_lag1, ..., var1_lagM, ..., varN_lagM
-    # to:
+    # then appended to predictors to make the next prediction. I.e. reorder to:
     # var1_lagM, ..., varN_lagM, ..., var1_lag1, ..., varN_lag1
     sigma2 = np.stack(
         [params[v].isel(params=slice(-len(variables), None)) for v in variables],
