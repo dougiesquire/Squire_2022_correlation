@@ -164,7 +164,7 @@ def calculate_NAO_index(ds, time_dim="time"):
     return nao - nao.mean(time_dim)
 
 
-def _get_consecutive_month_avg(ds, months, time_dim):
+def get_consecutive_month_avg(ds, months, time_dim):
     """
     Return the average over a set of consecutive months
 
@@ -206,7 +206,7 @@ def calculate_period_NAO_index(ds, period_months):
     else:
         time_dim = mean_dim = "time"
 
-    ds_period = _get_consecutive_month_avg(ds, period_months, time_dim)
+    ds_period = get_consecutive_month_avg(ds, period_months, time_dim)
 
     return calculate_NAO_index(ds_period, mean_dim)
 
@@ -254,7 +254,7 @@ def calculate_period_AMV_index(ds, period_months):
     else:
         time_dim = mean_dim = "time"
 
-    ds_period = _get_consecutive_month_avg(ds, period_months, time_dim)
+    ds_period = get_consecutive_month_avg(ds, period_months, time_dim)
 
     return calculate_AMV_index(ds_period, mean_dim)
 

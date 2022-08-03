@@ -81,7 +81,7 @@ def _prep_for_fit(ds, dim):
     if "member" in ds.dims:
         stack_dims.append("member")
 
-    bystander_dims = list(set(ds.dims) - set(stack_dims + [dim]))
+    bystander_dims = [d for d in ds.dims if d not in stack_dims + [dim]]
     to_stack = {BYSTANDER_DIM: bystander_dims}
 
     # Ensure that there are always bystander and stack dims
@@ -101,9 +101,63 @@ def _prep_for_fit(ds, dim):
     return ds_prepped, dummy_dim
 
 
+def reorder_params(params, order_by, lag):
+    """
+    Reorder the params
+
+    Parameters
+    ----------
+    params : xarray Dataset
+        The parameters as output by ar_model.fit or ar_model.select_order
+    order_by : str
+        String specifying how the order the parameters. Options are:
+        - "var_lag", indicating that the variables are ordered and then
+          the lags
+        - "lag_var", indicating that the lags are ordered and then the
+          variables
+    lag : str
+        String specifying the sort direction of the lags. Options are
+        "ascending" or "descending"
+
+    Notes
+    -----
+        Common use cases are ([var_1.noise_var,... , varN.noise_var] is
+        included at the end of all the following):
+        - Order output by ar_model.fit (convenvient for matrix multiplication
+          during fitting):
+          [var1.lagM, ..., var1.lag1, ..., varN.lagM, ..., varN.lag1]
+          `order_by`="var_lag", `lag`="descending"
+        - Order expected by statsmodels functions:
+          [var1.lag1, ..., varN.lag1, ..., var1.lagM, ..., varN.lagM]
+          `order_by`="lag_var", `lag`="ascending"
+        - Order used by ar_model.predict (easily matmul'd by the predictors
+          and then appended to predictors to make the next prediction):
+          [var1.lagM, ..., varN.lagM, ..., var1.lag1, ..., varN.lag1]
+          `order_by`="lag_var", `lag`="descending"
+    """
+    variables = list(params.data_vars)
+    n_lags = int((params.sizes["params"] - len(variables)) / len(variables))
+
+    if lag == "ascending":
+        lags = range(1, n_lags + 1)
+    elif lag == "descending":
+        lags = range(n_lags, 0, -1)
+    else:
+        raise ValueError("Input `lag` must be either 'ascending' or 'descending'")
+
+    if order_by == "var_lag":
+        order_params = [f"{v}.lag{lag}" for v in variables for lag in lags]
+    elif order_by == "lag_var":
+        order_params = [f"{v}.lag{lag}" for lag in lags for v in variables]
+    else:
+        raise ValueError("Input `order_by` must be either 'var_lag' or 'lag_var'")
+
+    return params.sel(params=order_params + [f"{v}.noise_var" for v in variables])
+
+
 def fit(ds, n_lags, dim="time"):
     """
-    Fit a (Vector) Autoregressive model(s)
+    Fit a (Vector) Autoregressive model(s) via OLS
 
     Parameters
     ----------
@@ -229,7 +283,7 @@ def fit(ds, n_lags, dim="time"):
     params = params.assign_coords({"model_order": model_order})
     params = params.assign_coords({PARAM_DIM: param_labels})
 
-    return params
+    return reorder_params(params, order_by="lag_var", lag="ascending")
 
 
 def select_order(ds, dim="time", maxlag=10, kwargs={"ic": "aic"}):
@@ -386,6 +440,10 @@ def generate_samples(
         extend_time = 0
     else:
         extend_time = max(temporal_means) - 1
+        
+    # Ensure params are in the order expected by the statsmodel Process generators
+    # [var1_lag1, ..., varN_lag1, ..., var1_lagM, ..., varN_lagM]
+    params = reorder_params(params, order_by="lag_var", lag="ascending")
 
     samples = xr.apply_ufunc(
         _generate_samples,
@@ -491,13 +549,13 @@ def predict(params, inits, n_steps, n_members=1, seed=None):
     # Reorder the coefs so that they can be easily matmul'd by the predictors and
     # then appended to predictors to make the next prediction. I.e. reorder to:
     # var1_lagM, ..., varN_lagM, ..., var1_lag1, ..., varN_lag1
+    params = reorder_params(params, order_by="lag_var", lag="descending")
     sigma2 = np.stack(
         [params[v].isel(params=slice(-len(variables), None)) for v in variables],
         axis=-1,
     )
-    sort_coefs = [f"{v}.lag{lag}" for lag in range(n_lags, 0, -1) for v in variables]
     coefs = np.stack(
-        [params[v].sel(params=sort_coefs) for v in variables],
+        [params[v].isel(params=slice(-len(variables))) for v in variables],
         axis=-1,
     )
 
