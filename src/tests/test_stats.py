@@ -1,9 +1,7 @@
-import pytest
-
 import itertools
 
+import pytest
 import numpy as np
-
 import xarray as xr
 
 from src import stats

@@ -163,8 +163,7 @@ def fit(ds, n_lags, dim="time"):
     ----------
     ds : xarray Dataset
         The data to fit the (V)AR model to. If multiple variables are available
-        in ds, a VAR model is fitted. If a "member" dimension is present, then
-        all elements along this dimension are fitted together
+        in ds, a VAR model is fitted.
     n_lags : int or str
         The order of the (V)AR(n) process to fit. For single variable (AR)
         models, users can alternatively pass the string "select_order" to use
@@ -172,7 +171,8 @@ def fit(ds, n_lags, dim="time"):
     dim : str
         The dimension along which to fit the AR model(s). If `dim="lead"`, then
         all elements along the dimension "init" (assumed to be present) are
-        fitted together
+        fitted together. If a "member" dimension is present, then all elements
+        along this dimension are fitted together
 
     Returns
     -------
